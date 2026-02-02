@@ -737,7 +737,7 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
                                 "return_id",
                                 "request_item_id",
                                 "status",
-                                "return_type",
+                                "return_type", 'receiver_remarks'
                             ],
                             include: [
                                 {
@@ -992,7 +992,7 @@ export const initiateReturnRequest = async (req, res) => {
             to_site_id,
             asset_id,
             return_qty,
-            asset_condition,
+            asset_condition, receiver_remarks,
         } = req.body;
 
         const imageFiles = req.files?.length ? req.files : req.file ? [req.file] : [];
@@ -1041,6 +1041,7 @@ export const initiateReturnRequest = async (req, res) => {
             return_type,
             initiated_by: userId,
             status: "INITIATED",
+            receiver_remarks: receiver_remarks || null,
         }, { transaction: t });
 
         const returnItem = await AssetReturnItem.create({
@@ -1214,15 +1215,28 @@ export const reviewReturnRequest = async (req, res) => {
 //Request Servicing
 export const requestServicing = async (req, res) => {
     // console.log('trigerred')
-    const { request_item_id, remarks } = req.body;
-    // console.log(request_item_id, 'request_item_id')
+    const { request_item_id, remarks,
+        service_person_name,
+        service_person_mobile,
+        serviced_date,
+    } = req.body;
+    // console.log(
+    //     "DEBUG servicing_remarks:",
+    //     remarks,
+    //     typeof remarks,
+    //     JSON.stringify(remarks)
+    // );
     const item = await AssetRequestItem.findByPk(request_item_id);
     if (!item) return res.status(404).json({ message: "Request item not found" });
 
     await item.update({
         servicing_status: "PENDING",
-        servicing_remarks: remarks,
+        servicing_remarks: remarks?.trim() || null,
         servicing_requested_at: new Date(),
+
+        service_person_name: service_person_name || null,
+        service_person_mobile: service_person_mobile || null,
+        servicing_completed_at: serviced_date || null,
     });
 
     res.json({ message: "Servicing request submitted" });

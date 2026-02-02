@@ -73,9 +73,19 @@ const AssetRequestItem = sequelize.define(
         servicing_completed_at: {
             type: DataTypes.DATE,
             allowNull: true,
-        }
-
-
+        },
+        service_person_name: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        service_person_mobile: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+        },
+        tracking_id: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+        },
 
 
     },
