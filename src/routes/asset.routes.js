@@ -1,0 +1,88 @@
+import express from "express";
+import {
+    approveSpareRequest, requestSpareApproval, getUsageImages, uploadUsageImage, initiateReturnRequest, reviewReturnRequest,
+    updateSiteEndDate, getAllocatedAssetRequestById, getAllocatedAssetRequests, createAsset,
+    getAssets, deleteAsset, updateAsset, getAssetById, createAssetRequest, getRequestsForAdmin,
+    decideAssetRequest, getAssetRequestById, allocateAssetRequest, reviewServicing, requestServicing, completeServicing
+} from "../controllers/asset.controller.js";
+import { authenticate } from "../middlewares/auth.middleware.js";
+import { upload } from "../middlewares/upload.middleware.js";
+const router = express.Router();
+
+router.post(
+    "/create",
+    authenticate,
+    upload.fields([
+        { name: "asset_image", maxCount: 1 },
+        { name: "warranty", maxCount: 1 },
+        { name: "technical_data_sheet", maxCount: 1 },
+        { name: "calibration_certificate", maxCount: 1 },
+    ]),
+    createAsset
+);
+router.get("/fetchAll", authenticate, getAssets);
+router.delete("/delete/:id", authenticate, deleteAsset);
+router.put(
+    "/:id",
+    authenticate,
+    upload.fields([
+        { name: "asset_image", maxCount: 1 },
+        { name: "warranty", maxCount: 1 },
+        { name: "technical_data_sheet", maxCount: 1 },
+        { name: "calibration_certificate", maxCount: 1 },
+    ]),
+    updateAsset
+);
+router.get("/:id", authenticate, getAssetById);
+router.post("/asset-requests", authenticate, createAssetRequest);
+
+router.get(
+    "/asset-requests/allocated-records/:reqId",
+    authenticate,
+    getAllocatedAssetRequestById
+);
+
+router.get(
+    "/asset-requests/allocated-records",
+    getAllocatedAssetRequests
+);
+router.get("/asset-requests/:adminId", authenticate, getRequestsForAdmin);
+router.post("/asset-requests/decision/:reqId", authenticate, decideAssetRequest);
+router.get("/asset-requests/request/:reqId", authenticate, getAssetRequestById);
+router.patch(
+    "/asset-requests/allocate/:reqId",
+    authenticate,
+    allocateAssetRequest
+);
+router.patch("/asset-requests/site-end-date/:reqId", authenticate, updateSiteEndDate);
+router.post(
+    "/asset-usage/:request_item_id",
+    authenticate,
+    upload.single("image"), // ✅ REQUIRED
+    uploadUsageImage
+);
+
+router.get("/usage-images/:reqId", authenticate, getUsageImages);
+
+router.post('/request-spare', authenticate, requestSpareApproval)
+
+router.patch("/spare-request/:request_item_id", authenticate, approveSpareRequest);
+
+router.post(
+    "/return/initiate",
+    authenticate,
+    upload.array("images"),
+    initiateReturnRequest
+);
+
+
+router.post("/return/review", authenticate, reviewReturnRequest);
+router.post("/servicing-request", requestServicing);
+router.post("/servicing-review", reviewServicing);
+router.post("/servicing-complete", completeServicing);
+
+
+
+
+
+export default router;
