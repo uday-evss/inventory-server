@@ -504,12 +504,12 @@ export const decideAssetRequest = async (req, res) => {
         });
 
         // Email
-        await transporter.sendMail({
-            from: `"KDM Engineers" <${process.env.MAIL_USER}>`,
-            to: request.requestedBy.email,
-            subject: template.subject,
-            text: template.message,
-        });
+        // await transporter.sendMail({
+        //     from: `"KDM Engineers" <${process.env.MAIL_USER}>`,
+        //     to: request.requestedBy.email,
+        //     subject: template.subject,
+        //     text: template.message,
+        // });
 
         // WhatsApp
         // await sendWhatsappMessage({
@@ -992,8 +992,10 @@ export const initiateReturnRequest = async (req, res) => {
             to_site_id,
             asset_id,
             return_qty,
-            asset_condition, receiver_remarks,
+            asset_condition, receiver_remarks, received_by
         } = req.body;
+
+        console.log(received_by, 'received_by78')
 
         const imageFiles = req.files?.length ? req.files : req.file ? [req.file] : [];
         const userId = req.user.id;
@@ -1039,7 +1041,7 @@ export const initiateReturnRequest = async (req, res) => {
             from_site_id,
             to_site_id: to_site_id || null,
             return_type,
-            initiated_by: userId,
+            initiated_by: received_by,
             status: "INITIATED",
             receiver_remarks: receiver_remarks || null,
         }, { transaction: t });
@@ -1094,9 +1096,11 @@ export const initiateReturnRequest = async (req, res) => {
 
 //REVIEW RETURN ITEMS
 export const reviewReturnRequest = async (req, res) => {
-    const { return_id, decision, inventory_remarks } = req.body;
+    const { return_id, decision, inventory_remarks, approvedAdminId } = req.body;
 
     const t = await sequelize.transaction();
+
+
 
     try {
         const request = await AssetReturnRequest.findOne({
@@ -1169,10 +1173,11 @@ export const reviewReturnRequest = async (req, res) => {
                 request.to_site_id
             ) {
                 // 1️⃣ Create Asset Request for destination site
+                // console.log(request.initiated_by, 'request.initiated_by')
                 const newAssetRequest = await AssetRequest.create(
                     {
                         req_user_id: request.initiated_by,
-                        admin_user_id: null,
+                        admin_user_id: approvedAdminId,
                         admin_approval: 'APPROVED',
                         req_nature: 'TRANSFERRED'
                         , site_id: request.to_site_id,
