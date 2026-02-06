@@ -654,35 +654,110 @@ export const getAssetRequestById = async (req, res) => {
 
 
 //MARK ASSET REQUEST AS ALLOCATED
+// export const allocateAssetRequest = async (req, res) => {
+//     const { reqId } = req.params;
+
+//     const request = await AssetRequest.findByPk(reqId);
+
+//     if (!request) {
+//         return res.status(404).json({ message: "Request not found" });
+//     }
+
+//     if (request.admin_approval !== "APPROVED") {
+//         return res
+//             .status(400)
+//             .json({ message: "Request must be approved first" });
+//     }
+
+//     if (request.allocated) {
+//         return res
+//             .status(400)
+//             .json({ message: "Request already allocated" });
+//     }
+
+//     request.allocated = 1;
+//     await request.save();
+
+//     res.json({
+//         success: true,
+//         message: "Request allocated successfully",
+//     });
+// };
+
 export const allocateAssetRequest = async (req, res) => {
     const { reqId } = req.params;
+    const transaction = await sequelize.transaction();
 
-    const request = await AssetRequest.findByPk(reqId);
+    try {
+        // 1️⃣ Fetch current request
+        const request = await AssetRequest.findByPk(reqId, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
 
-    if (!request) {
-        return res.status(404).json({ message: "Request not found" });
+        if (!request) {
+            await transaction.rollback();
+            return res.status(404).json({ message: "Request not found" });
+        }
+
+        if (request.admin_approval !== "APPROVED") {
+            await transaction.rollback();
+            return res.status(400).json({
+                message: "Request must be approved first",
+            });
+        }
+
+        // 2️⃣ Check if another allocated request exists for same site
+        const existingAllocatedRequest = await AssetRequest.findOne({
+            where: {
+                site_id: request.site_id,
+                allocated: 1,
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        if (existingAllocatedRequest) {
+            // 3️⃣ Re-assign items to already allocated request
+            await AssetRequestItem.update(
+                { req_id: existingAllocatedRequest.req_id },
+                {
+                    where: { req_id: request.req_id },
+                    transaction,
+                }
+            );
+
+            await transaction.commit();
+
+            return res.json({
+                success: true,
+                message:
+                    "Request items merged into existing allocated request",
+                merged_into_req_id: existingAllocatedRequest.req_id,
+            });
+        }
+
+        // 4️⃣ No allocated request exists → allocate current one
+        request.allocated = 1;
+        await request.save({ transaction });
+
+        await transaction.commit();
+
+        return res.json({
+            success: true,
+            message: "Request allocated successfully",
+            req_id: request.req_id,
+        });
+    } catch (error) {
+        await transaction.rollback();
+        console.error("allocateAssetRequest error:", error);
+
+        return res.status(500).json({
+            message: "Failed to allocate request",
+        });
     }
-
-    if (request.admin_approval !== "APPROVED") {
-        return res
-            .status(400)
-            .json({ message: "Request must be approved first" });
-    }
-
-    if (request.allocated) {
-        return res
-            .status(400)
-            .json({ message: "Request already allocated" });
-    }
-
-    request.allocated = 1;
-    await request.save();
-
-    res.json({
-        success: true,
-        message: "Request allocated successfully",
-    });
 };
+
 
 //FETCH ALLOCATED ASSET REQUESTS
 export const getAllocatedAssetRequests = async (req, res, next) => {
