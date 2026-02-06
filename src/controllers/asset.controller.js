@@ -727,6 +727,12 @@ export const allocateAssetRequest = async (req, res) => {
                 }
             );
 
+            await AssetRequest.destroy({
+                where: { req_id: request.req_id },
+                transaction,
+            });
+
+
             await transaction.commit();
 
             return res.json({
