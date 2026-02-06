@@ -355,58 +355,110 @@ export const createAssetRequest = async (req, res) => {
             items,
         } = req.body;
 
-        // 1️⃣ Check if AssetRequest already exists for this site
-        let assetRequest = await AssetRequest.findOne({
-            where: { site_id },
-            transaction,
-            lock: transaction.LOCK.UPDATE,
-        });
+        // 1️⃣ Create request
+        const assetRequest = await AssetRequest.create(
+            {
+                req_user_id,
+                admin_user_id,
+                site_id,
+                priority_level,
+                request_remarks, allocated: 0
+            },
+            { transaction }
+        );
 
-        // 2️⃣ If not exists → create new AssetRequest
-        if (!assetRequest) {
-            assetRequest = await AssetRequest.create(
-                {
-                    req_user_id,
-                    admin_user_id,
-                    site_id,
-                    priority_level,
-                    request_remarks,
-                    allocated: 0,
-                },
-                { transaction }
-            );
-        }
+        // 2️⃣ Create request items
 
-        // 3️⃣ Prepare request items using resolved req_id
         const requestItems = items.map(item => ({
             req_id: assetRequest.req_id,
             asset_id: item.asset_id,
             requested_qty: item.requested_qty,
-            spare_item: item.spare_item ?? false,
+            spare_item: item.spare_item ?? false, // ✅ NEW
         }));
 
-        // 4️⃣ Create request items
-        await AssetRequestItem.bulkCreate(requestItems, {
-            transaction,
-        });
 
-        // 5️⃣ Commit
+        await AssetRequestItem.bulkCreate(requestItems, { transaction });
+
+        // 3️⃣ Commit
         await transaction.commit();
 
         return res.status(201).json({
-            message: "Asset request processed successfully",
+            message: "Asset request created successfully",
             data: assetRequest,
         });
     } catch (error) {
         await transaction.rollback();
-        console.error("createAssetRequest error:", error);
-
+        console.error(error);
         return res.status(500).json({
             message: "Failed to create asset request",
         });
     }
 };
 
+// export const createAssetRequest = async (req, res) => {
+//     const transaction = await sequelize.transaction();
+
+//     try {
+//         const {
+//             req_user_id,
+//             admin_user_id,
+//             site_id,
+//             priority_level,
+//             request_remarks,
+//             items,
+//         } = req.body;
+
+//         // 1️⃣ Check if AssetRequest already exists for this site
+//         let assetRequest = await AssetRequest.findOne({
+//             where: { site_id },
+//             transaction,
+//             lock: transaction.LOCK.UPDATE,
+//         });
+
+//         // 2️⃣ If not exists → create new AssetRequest
+//         if (!assetRequest) {
+//             assetRequest = await AssetRequest.create(
+//                 {
+//                     req_user_id,
+//                     admin_user_id,
+//                     site_id,
+//                     priority_level,
+//                     request_remarks,
+//                     allocated: 0,
+//                 },
+//                 { transaction }
+//             );
+//         }
+
+//         // 3️⃣ Prepare request items using resolved req_id
+//         const requestItems = items.map(item => ({
+//             req_id: assetRequest.req_id,
+//             asset_id: item.asset_id,
+//             requested_qty: item.requested_qty,
+//             spare_item: item.spare_item ?? false,
+//         }));
+
+//         // 4️⃣ Create request items
+//         await AssetRequestItem.bulkCreate(requestItems, {
+//             transaction,
+//         });
+
+//         // 5️⃣ Commit
+//         await transaction.commit();
+
+//         return res.status(201).json({
+//             message: "Asset request processed successfully",
+//             data: assetRequest,
+//         });
+//     } catch (error) {
+//         await transaction.rollback();
+//         console.error("createAssetRequest error:", error);
+
+//         return res.status(500).json({
+//             message: "Failed to create asset request",
+//         });
+//     }
+// };
 
 
 //GET ALL ASSET REQUESTS
