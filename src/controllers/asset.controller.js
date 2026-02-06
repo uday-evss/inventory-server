@@ -995,7 +995,7 @@ export const initiateReturnRequest = async (req, res) => {
             asset_condition, receiver_remarks, received_by
         } = req.body;
 
-        console.log(received_by, 'received_by78')
+        // console.log(received_by, 'received_by78')
 
         const imageFiles = req.files?.length ? req.files : req.file ? [req.file] : [];
         const userId = req.user.id;
@@ -1004,9 +1004,11 @@ export const initiateReturnRequest = async (req, res) => {
         // STEP 1: FETCH ORIGINAL REQUEST ITEM
         // =====================================================
         const requestItem = await AssetRequestItem.findByPk(request_item_id, {
-            attributes: ["requested_qty"],
+            attributes: ["requested_qty", "spare_item"],
             transaction: t,
         });
+
+        // console.log(requestItem, 'requestItem786')
 
         if (!requestItem) throw new Error("Invalid request item");
 
@@ -1050,7 +1052,7 @@ export const initiateReturnRequest = async (req, res) => {
             id: uuid(),
             return_id: returnReq.return_id,
             asset_id,
-            return_qty,
+            return_qty, spare_check: requestItem.spare_item
         }, { transaction: t });
 
         // =====================================================
@@ -1172,33 +1174,45 @@ export const reviewReturnRequest = async (req, res) => {
                 request.return_type === "TRANSFER_TO_SITE" &&
                 request.to_site_id
             ) {
-                // 1️⃣ Create Asset Request for destination site
-                // console.log(request.initiated_by, 'request.initiated_by')
-                const newAssetRequest = await AssetRequest.create(
-                    {
-                        req_user_id: request.initiated_by,
-                        admin_user_id: approvedAdminId,
-                        admin_approval: 'APPROVED',
-                        req_nature: 'TRANSFERRED'
-                        , site_id: request.to_site_id,
-                        priority_level: "MEDIUM",
-                        request_remarks: `Auto-created from asset transfer (Return ID: ${request.return_id})`,
-                        allocated: 1,
-                    },
-                    { transaction: t }
-                );
+                // 1️⃣ Check if AssetRequest already exists for this return
+                let assetRequest = await AssetRequest.findOne({
+                    where: { site_id: request.to_site_id },
+                    transaction: t,
+                    lock: t.LOCK.UPDATE,
+                });
 
-                // 2️⃣ Create request items
+                // 2️⃣ If not exists → create
+                if (!assetRequest) {
+                    assetRequest = await AssetRequest.create(
+                        {
+                            req_user_id: request.initiated_by,
+                            admin_user_id: approvedAdminId,
+                            admin_approval: "APPROVED",
+                            req_nature: "TRANSFERRED",
+                            site_id: request.to_site_id,
+                            priority_level: "MEDIUM",
+                            request_remarks: `Auto-created from asset transfer (Return ID: ${request.return_id})`,
+                            allocated: 1,
+                            return_identity: request.return_id,
+                        },
+                        { transaction: t }
+                    );
+                }
+
+                // console.log(request.items, 'request.items')
+
+                // 3️⃣ Create request items using resolved req_id
                 const requestItems = request.items.map((item) => ({
-                    req_id: newAssetRequest.req_id,
+                    req_id: assetRequest.req_id,
                     asset_id: item.asset_id,
                     requested_qty: item.return_qty,
-                    spare_item: false,
+                    spare_item: item.spare_check,
                 }));
 
                 await AssetRequestItem.bulkCreate(requestItems, {
                     transaction: t,
                 });
+
             }
 
             await t.commit();

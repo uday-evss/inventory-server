@@ -24,6 +24,12 @@ const AssetReturnItem = sequelize.define(
             type: DataTypes.INTEGER,
             allowNull: false,
         },
+        spare_check: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+
     },
     {
         tableName: "asset_return_items",

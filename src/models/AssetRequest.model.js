@@ -67,6 +67,11 @@ const AssetRequest = sequelize.define(
             type: DataTypes.TEXT,
             allowNull: true,
         },
+
+        return_identity: {
+            type: DataTypes.CHAR(36),
+        }
+
     },
     {
         tableName: "asset_request",
