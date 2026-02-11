@@ -13,6 +13,7 @@ const User = sequelize.define(
         employeeId: {
             type: DataTypes.STRING,
             allowNull: false,
+            // unique: true,
         },
 
         fullName: {
