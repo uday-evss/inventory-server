@@ -74,9 +74,9 @@ export const createUser = async (req, res, next) => {
 export const updateUser = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { fullName, role, email, mobile, resetPassword } = req.body;
+        const { fullName, role, email, mobile, resetPassword, employeeId } = req.body;
 
-        console.log(req.body, "updateUserReqBody");
+        // console.log(req.body, "updateUserReqBody");
 
         // const user = await User.findByPk(id);
         // if (!user) {
@@ -143,12 +143,11 @@ export const updateUser = async (req, res, next) => {
             role,
             email,
             mobile,
-            profilePic: profilePicUrl,
+            profilePic: profilePicUrl, employeeId
         });
 
-        await user.save();
+        // await user.save();
 
-        console.log(user, "updatedUser");
 
 
         res.status(200).json({

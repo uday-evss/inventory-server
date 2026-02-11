@@ -75,6 +75,7 @@ const User = sequelize.define(
             { unique: true, fields: ["email", "company_id"] },
             { unique: true, fields: ["username", "company_id"] },
         ],
+
         charset: "utf8mb4",
         collate: "utf8mb4_bin",
     }
