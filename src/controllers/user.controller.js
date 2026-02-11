@@ -76,7 +76,7 @@ export const updateUser = async (req, res, next) => {
         const { id } = req.params;
         const { fullName, role, email, mobile, resetPassword } = req.body;
 
-
+        console.log(req.body, "updateUserReqBody");
 
         // const user = await User.findByPk(id);
         // if (!user) {
@@ -147,6 +147,8 @@ export const updateUser = async (req, res, next) => {
         });
 
         await user.save();
+
+        console.log(user, "updatedUser");
 
 
         res.status(200).json({
