@@ -43,7 +43,7 @@ router.get(
 );
 
 router.get(
-    "/asset-requests/allocated-records",
+    "/asset-requests/allocated-records", authenticate,
     getAllocatedAssetRequests
 );
 router.get("/asset-requests/:adminId", authenticate, getRequestsForAdmin);
@@ -58,7 +58,7 @@ router.patch("/asset-requests/site-end-date/:reqId", authenticate, updateSiteEnd
 router.post(
     "/asset-usage/:request_item_id",
     authenticate,
-    upload.single("image"), // ✅ REQUIRED
+    upload.single("image"),
     uploadUsageImage
 );
 
@@ -77,9 +77,9 @@ router.post(
 
 
 router.post("/return/review", authenticate, reviewReturnRequest);
-router.post("/servicing-request", requestServicing);
-router.post("/servicing-review", reviewServicing);
-router.post("/servicing-complete", completeServicing);
+router.post("/servicing-request", authenticate, requestServicing);
+router.post("/servicing-review", authenticate, reviewServicing);
+router.post("/servicing-complete", authenticate, completeServicing);
 
 
 

@@ -70,7 +70,13 @@ const AssetRequest = sequelize.define(
 
         return_identity: {
             type: DataTypes.CHAR(36),
+        },
+
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
         }
+
 
     },
     {
@@ -106,6 +112,12 @@ AssetRequest.associate = (models) => {
         as: "items",
         onDelete: "CASCADE",
     });
+
+    AssetRequest.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 };
 
 export default AssetRequest;

@@ -7,8 +7,8 @@ const router = express.Router();
 router.post("/create", authenticate, createSite);
 router.get("/all-sites", authenticate, getAllSites);
 router.delete("/delete/:id", authenticate, deleteSite);
-router.get("/:id", getSiteById);
-router.put("/update/:id", updateSite);
+router.get("/:id", authenticate, getSiteById);
+router.put("/update/:id", authenticate, updateSite);
 
 
 

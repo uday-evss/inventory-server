@@ -37,6 +37,11 @@ const AssetRequestItemImage = sequelize.define(
             allowNull: false,
         },
 
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
+
     },
     {
         tableName: "asset_request_item_images",
@@ -60,6 +65,12 @@ AssetRequestItemImage.associate = (models) => {
         foreignKey: "uploaded_by",
         as: "uploadedBy",
     });
+
+    AssetRequestItemImage.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 
 };
 

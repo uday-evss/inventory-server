@@ -14,7 +14,7 @@ router.put(
 );
 router.delete("/delete-user/:id", authenticate, deleteUser);
 router.get("/get-users", authenticate, getUsers);
-router.get("/get-user/:id", getUserById);
+router.get("/get-user/:id", authenticate, getUserById);
 
 
 export default router;

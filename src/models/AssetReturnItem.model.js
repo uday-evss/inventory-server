@@ -30,6 +30,11 @@ const AssetReturnItem = sequelize.define(
             defaultValue: false,
         },
 
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
+
     },
     {
         tableName: "asset_return_items",
@@ -54,6 +59,12 @@ AssetReturnItem.associate = (models) => {
         foreignKey: "return_id",
         as: "returnRequest",
     });
+
+    AssetReturnItem.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 
 
 }

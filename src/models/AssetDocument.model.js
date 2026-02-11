@@ -26,7 +26,13 @@ const AssetDocument = sequelize.define(
                 "calibration_certificate"
             ),
             allowNull: false,
+        },
+
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
         }
+
 
     },
     {
@@ -43,6 +49,12 @@ AssetDocument.associate = (models) => {
         foreignKey: "asset_id",
         as: "asset",
     });
+
+    AssetDocument.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 };
 
 export default AssetDocument;

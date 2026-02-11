@@ -58,6 +58,7 @@ export const createUser = async (req, res, next) => {
             username,
             password: hashedPassword,
             profilePic: profilePicUrl, // 👈 S3 URL saved
+            company_id: req.user.company_id,
         });
 
         res.status(201).json({
@@ -77,10 +78,24 @@ export const updateUser = async (req, res, next) => {
 
 
 
-        const user = await User.findByPk(id);
+        // const user = await User.findByPk(id);
+        // if (!user) {
+        //     return res.status(404).json({ message: "User not found" });
+        // }
+
+        const user = await User.findOne({
+            where: {
+                id,
+                company_id: req.user.company_id,
+            },
+        });
+
         if (!user) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({
+                message: "User not found or unauthorized",
+            });
         }
+
 
         if (resetPassword) {
             const hashed = await bcrypt.hash(resetPassword, 12);
@@ -147,10 +162,18 @@ export const updateUser = async (req, res, next) => {
 //FETCHING USERS
 export const getUsers = async (req, res, next) => {
     try {
+        // const users = await User.findAll({
+        //     attributes: { exclude: ["password"] },
+        //     order: [["createdAt", "DESC"]],
+        // });
+
         const users = await User.findAll({
+            where: { company_id: req.user.company_id },
             attributes: { exclude: ["password"] },
             order: [["createdAt", "DESC"]],
         });
+
+
         // console.log(users, 'users324')
         res.status(200).json({
             data: users,
@@ -166,10 +189,24 @@ export const deleteUser = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        const user = await User.findByPk(id);
+        // const user = await User.findByPk(id);
+        // if (!user) {
+        //     return res.status(404).json({ message: "User not found" });
+        // }
+
+        const user = await User.findOne({
+            where: {
+                id,
+                company_id: req.user.company_id,
+            },
+        });
+
         if (!user) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({
+                message: "User not found or unauthorized",
+            });
         }
+
 
         if (user.profilePic) {
             const key = user.profilePic.split(".amazonaws.com/")[1];
@@ -197,15 +234,30 @@ export const getUserById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const user = await User.findByPk(id, {
-            attributes: {
-                exclude: ["password"]
-            }
+        // const user = await User.findByPk(id, {
+        //     attributes: {
+        //         exclude: ["password"]
+        //     }
+        // });
+
+        // if (!user) {
+        //     return res.status(404).json({ message: "User not found" });
+        // }
+
+        const user = await User.findOne({
+            where: {
+                id,
+                company_id: req.user.company_id,
+            },
+            attributes: { exclude: ["password"] },
         });
 
         if (!user) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({
+                message: "User not found or access denied",
+            });
         }
+
 
         res.json(user);
     } catch (err) {

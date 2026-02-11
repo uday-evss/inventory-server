@@ -30,6 +30,13 @@ const SiteData = sequelize.define(
             type: DataTypes.DATE,
             allowNull: true,
         },
+
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
+
+
     },
     {
         tableName: "site_data",
@@ -45,6 +52,11 @@ SiteData.associate = (models) => {
         as: "assetRequests",
         onDelete: "CASCADE",
     });
+    SiteData.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 };
 
 export default SiteData;

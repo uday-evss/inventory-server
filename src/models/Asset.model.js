@@ -59,6 +59,13 @@ const Asset = sequelize.define(
             type: DataTypes.STRING,
             allowNull: true,
         },
+
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
+
+
     },
     {
         tableName: "asset_table",
@@ -78,6 +85,12 @@ Asset.associate = (models) => {
         foreignKey: "asset_id",
         as: "pendingItems",
     });
+
+    Asset.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 
 };
 

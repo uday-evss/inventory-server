@@ -8,7 +8,8 @@ import AssetRequestItemImage from "./AssetRequestItemImage.model.js";
 import SiteData from "./SiteData.model.js";
 import AssetReturnRequest from './AssetReturnRequest.model.js';
 import AssetReturnItem from './AssetReturnItem.model.js';
-import AssetReturnImage from './AssetReturnImage.model.js'
+import AssetReturnImage from './AssetReturnImage.model.js';
+import Company from "./Company.model.js";
 
 
 const db = {};
@@ -24,6 +25,7 @@ db.SiteData = SiteData;
 db.AssetReturnRequest = AssetReturnRequest;
 db.AssetReturnItem = AssetReturnItem;
 db.AssetReturnImage = AssetReturnImage;
+db.Company = Company;
 
 /* ================= INITIALIZE ASSOCIATIONS ================= */
 Object.values(db).forEach((model) => {

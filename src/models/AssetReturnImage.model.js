@@ -34,6 +34,10 @@ const AssetReturnImage = sequelize.define(
             type: DataTypes.CHAR(36),
             allowNull: false,
         },
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
     },
     {
         tableName: "asset_return_images",
@@ -56,6 +60,12 @@ AssetReturnImage.associate = (models) => {
         foreignKey: "uploaded_by",
         as: "uploadedBy",
     });
+
+    AssetReturnImage.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 };
 
 

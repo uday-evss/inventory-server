@@ -56,6 +56,10 @@ const AssetReturnRequest = sequelize.define(
             type: DataTypes.TEXT,
             allowNull: true,
         },
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
     },
     {
         tableName: "asset_return_requests",
@@ -91,6 +95,12 @@ AssetReturnRequest.associate = (models) => {
         foreignKey: "initiated_by",
         as: "initiatedBy",
     });
+
+    AssetReturnRequest.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 
 
 }

@@ -31,26 +31,18 @@ const uploadDoc = async (file, folder = "assets") => {
 //CREATE ASSET
 export const createAsset = async (req, res, next) => {
     try {
+        const companyId = req.user.company_id;
+
         const {
-            asset_name,
-            asset_type,
-            qty,
-            units,
-            make,
-            remarks,
-            asset_condition, // ✅ NEW
-            asset_status,    // ✅ NEW (can be null)
+            asset_name, asset_type, qty, units, make,
+            remarks, asset_condition, asset_status
         } = req.body;
 
-        let assetImageUrl = null;
-        if (req.files?.asset_image) {
-            assetImageUrl = await uploadDoc(
-                req.files.asset_image[0],
-                "asset-images"
-            );
-        }
-        const finalCondition = asset_condition ?? "WORKING";
+        const assetImageUrl = req.files?.asset_image
+            ? await uploadDoc(req.files.asset_image[0], "asset-images")
+            : null;
 
+        const finalCondition = asset_condition ?? "WORKING";
 
         const asset = await Asset.create({
             asset_name,
@@ -59,23 +51,20 @@ export const createAsset = async (req, res, next) => {
             units,
             make,
             remarks,
-            asset_condition: asset_condition ?? "WORKING",
-            asset_status: finalCondition === "WORKING" ? null : asset_status ?? null,
+            asset_condition: finalCondition,
+            asset_status: finalCondition === "WORKING" ? null : asset_status,
             asset_image: assetImageUrl,
+            company_id: companyId,
         });
 
-        // documents logic unchanged
-        for (const field of [
-            "warranty",
-            "technical_data_sheet",
-            "calibration_certificate",
-        ]) {
+        for (const field of ["warranty", "technical_data_sheet", "calibration_certificate"]) {
             if (req.files?.[field]) {
                 const url = await uploadDoc(req.files[field][0]);
                 await AssetDocument.create({
                     asset_id: asset.asset_id,
                     document_url: url,
                     doc_type: field,
+                    company_id: companyId,
                 });
             }
         }
@@ -88,76 +77,31 @@ export const createAsset = async (req, res, next) => {
 
 
 
+
 //FETCH ASSETS
 export const getAssets = async (req, res, next) => {
     try {
+        const companyId = req.user.company_id;
+
         const assets = await Asset.findAll({
+            where: { company_id: companyId },
             order: [["createdAt", "DESC"]],
-            attributes: {
-                include: [
-                    // 🔢 SUM of pending requested qty
-                    [
-                        Sequelize.fn(
-                            "COALESCE",
-                            Sequelize.fn("SUM", Sequelize.col("pendingItems.requested_qty")),
-                            0
-                        ),
-                        "pending_requested_qty",
-                    ],
-                ],
-            },
             include: [
                 {
                     model: AssetDocument,
                     as: "documents",
-                    attributes: ["id", "document_url", "createdAt"],
+                    where: { company_id: companyId },
                     required: false,
-                },
-                {
-                    model: AssetRequestItem,
-                    as: "pendingItems",
-                    attributes: [],
-                    required: false,
-                    include: [
-                        {
-                            model: AssetRequest,
-                            attributes: [],
-                            as: "request",
-                            where: {
-                                admin_approval: "PENDING",
-                            },
-                        },
-                    ],
                 },
             ],
-            group: ["Asset.asset_id", "documents.id"],
-            subQuery: false,
         });
 
-        // 🧠 Post-process for UX-friendly response
-        const response = assets.map((asset) => {
-            const assetJson = asset.toJSON();
-
-            const pendingQty = Number(assetJson.pending_requested_qty || 0);
-            const availableQty = assetJson.qty - pendingQty;
-            // console.log(assetJson.qty, pendingQty, availableQty);
-
-            return {
-                ...assetJson,
-                pending_requested_qty: pendingQty,
-                available_qty: availableQty,
-                availability_message:
-                    pendingQty > 0
-                        ? `Currently ${availableQty} ${assetJson.units} available. ${pendingQty} ${assetJson.units} are reserved in pending requests.`
-                        : `All ${availableQty} ${assetJson.units} are available`,
-            };
-        });
-
-        res.json(response);
+        res.json(assets);
     } catch (err) {
         next(err);
     }
 };
+
 
 /* helper: extract S3 key from full URL */
 const getS3KeyFromUrl = (url) => {
@@ -167,9 +111,11 @@ const getS3KeyFromUrl = (url) => {
 // DELETE ASSET
 export const deleteAsset = async (req, res, next) => {
     try {
+        const companyId = req.user.company_id;
         const { id } = req.params;
 
-        const asset = await Asset.findByPk(id, {
+        const asset = await Asset.findOne({
+            where: { asset_id: id, company_id: companyId },
             include: [{ model: AssetDocument, as: "documents" }],
         });
 
@@ -177,43 +123,18 @@ export const deleteAsset = async (req, res, next) => {
             return res.status(404).json({ message: "Asset not found" });
         }
 
-        /* ===== DELETE ASSET IMAGE FROM S3 ===== */
-        if (asset.asset_image) {
-            const key = getS3KeyFromUrl(asset.asset_image);
-            await s3.send(
-                new DeleteObjectCommand({
-                    Bucket: process.env.AWS_BUCKET_NAME,
-                    Key: key,
-                })
-            );
-        }
-
-        /* ===== DELETE DOCUMENT FILES FROM S3 ===== */
-        for (const doc of asset.documents) {
-            const key = getS3KeyFromUrl(doc.document_url);
-            await s3.send(
-                new DeleteObjectCommand({
-                    Bucket: process.env.AWS_BUCKET_NAME,
-                    Key: key,
-                })
-            );
-        }
-
-        /* ===== DELETE DB RECORDS ===== */
         await AssetDocument.destroy({
-            where: { asset_id: id },
+            where: { asset_id: id, company_id: companyId },
         });
 
         await asset.destroy();
 
-        res.json({
-            message: "Asset deleted successfully",
-            asset_id: id,
-        });
+        res.json({ message: "Asset deleted", asset_id: id });
     } catch (err) {
         next(err);
     }
 };
+
 
 // DELETE FROM S3
 const deleteFromS3 = async (url) => {
@@ -234,9 +155,24 @@ export const updateAsset = async (req, res, next) => {
     const t = await db.sequelize.transaction();
 
     try {
-        const asset = await Asset.findByPk(req.params.id, {
-            include: [{ model: AssetDocument, as: "documents" }],
+        const companyId = req.user.company_id;
+        const assetId = req.params.id;
+
+        const asset = await Asset.findOne({
+            where: {
+                asset_id: assetId,
+                company_id: companyId,
+            },
+            include: [
+                {
+                    model: AssetDocument,
+                    as: "documents",
+                    where: { company_id: companyId },
+                    required: false,
+                },
+            ],
             transaction: t,
+            lock: t.LOCK.UPDATE,
         });
 
         if (!asset) {
@@ -244,8 +180,17 @@ export const updateAsset = async (req, res, next) => {
             return res.status(404).json({ message: "Asset not found" });
         }
 
-        const { asset_name, asset_type, qty, units, make, remarks, asset_condition,
-            asset_status, } = req.body;
+        const {
+            asset_name,
+            asset_type,
+            qty,
+            units,
+            make,
+            remarks,
+            asset_condition,
+            asset_status,
+        } = req.body;
+
         const finalCondition = asset_condition ?? "WORKING";
 
         /* ================= ASSET IMAGE ================= */
@@ -271,8 +216,10 @@ export const updateAsset = async (req, res, next) => {
                 units,
                 make,
                 remarks,
-                asset_image: asset.asset_image, asset_condition,
-                asset_status: finalCondition === "WORKING" ? null : asset_status ?? null,
+                asset_image: asset.asset_image,
+                asset_condition: finalCondition,
+                asset_status:
+                    finalCondition === "WORKING" ? null : asset_status ?? null,
             },
             { transaction: t }
         );
@@ -284,7 +231,9 @@ export const updateAsset = async (req, res, next) => {
             "calibration_certificate",
         ]) {
             if (req.files?.[field]) {
-                const oldDocs = asset.documents.filter(d => d.doc_type === field);
+                const oldDocs = asset.documents.filter(
+                    d => d.doc_type === field
+                );
 
                 for (const doc of oldDocs) {
                     await deleteFromS3(doc.document_url);
@@ -298,12 +247,12 @@ export const updateAsset = async (req, res, next) => {
                         asset_id: asset.asset_id,
                         document_url: url,
                         doc_type: field,
+                        company_id: companyId,
                     },
                     { transaction: t }
                 );
             }
         }
-
 
         await t.commit();
         res.json({ message: "Asset updated", data: asset });
@@ -314,17 +263,20 @@ export const updateAsset = async (req, res, next) => {
 };
 
 
+
 // FETCH SINGLE ASSET BY ID
 export const getAssetById = async (req, res, next) => {
     try {
+        const companyId = req.user.company_id;
         const { id } = req.params;
 
-        const asset = await Asset.findByPk(id, {
+        const asset = await Asset.findOne({
+            where: { asset_id: id, company_id: companyId },
             include: [
                 {
                     model: AssetDocument,
                     as: "documents",
-                    attributes: ["id", "document_url", "createdAt"],
+                    where: { company_id: companyId },
                     required: false,
                 },
             ],
@@ -341,6 +293,7 @@ export const getAssetById = async (req, res, next) => {
 };
 
 
+
 //CREATING ASSET REQUEST
 export const createAssetRequest = async (req, res) => {
     const transaction = await sequelize.transaction();
@@ -355,6 +308,7 @@ export const createAssetRequest = async (req, res) => {
             items,
         } = req.body;
 
+        const companyId = req.user.company_id;
         // 1️⃣ Create request
         const assetRequest = await AssetRequest.create(
             {
@@ -362,7 +316,8 @@ export const createAssetRequest = async (req, res) => {
                 admin_user_id,
                 site_id,
                 priority_level,
-                request_remarks, allocated: 0
+                request_remarks, allocated: 0,
+                company_id: companyId,
             },
             { transaction }
         );
@@ -374,6 +329,7 @@ export const createAssetRequest = async (req, res) => {
             asset_id: item.asset_id,
             requested_qty: item.requested_qty,
             spare_item: item.spare_item ?? false, // ✅ NEW
+            company_id: companyId,
         }));
 
 
@@ -462,27 +418,29 @@ export const createAssetRequest = async (req, res) => {
 
 
 //GET ALL ASSET REQUESTS
+
+
 export const getRequestsForAdmin = async (req, res, next) => {
     try {
-        const { adminId } = req.params;
+        const companyId = req.user.company_id;
+        const adminId = req.user.id;
 
         const requests = await AssetRequest.findAll({
-            // ✅ Uncomment if admin should see only their requests
-            // where: { admin_user_id: adminId },
-
+            where: {
+                company_id: companyId,
+                // admin_user_id: adminId, // enable if needed
+            },
             order: [["requested_at", "DESC"]],
-
             include: [
                 {
                     model: User,
                     as: "requestedBy",
                     attributes: ["id", "fullName", "username"],
                 },
-
-                // ✅ ADD THIS BLOCK — SITE DATA
                 {
                     model: SiteData,
                     as: "site",
+                    where: { company_id: companyId },
                     attributes: [
                         "site_id",
                         "bridge_no",
@@ -491,14 +449,15 @@ export const getRequestsForAdmin = async (req, res, next) => {
                         "site_last_date",
                     ],
                 },
-
                 {
                     model: AssetRequestItem,
                     as: "items",
+                    where: { company_id: companyId },
                     include: [
                         {
                             model: Asset,
                             as: "asset",
+                            where: { company_id: companyId },
                             attributes: ["asset_id", "asset_name", "units"],
                         },
                     ],
@@ -514,18 +473,32 @@ export const getRequestsForAdmin = async (req, res, next) => {
 
 
 
+
 //UPDATE ASSET REQUEST STATUS BY ADMIN
 export const decideAssetRequest = async (req, res) => {
-    const { reqId } = req.params;
-    const { decision, adminId, adminAdvice } = req.body;
-
     const t = await sequelize.transaction();
 
     try {
-        const request = await AssetRequest.findByPk(reqId, {
+        const companyId = req.user.company_id;
+        const adminId = req.user.id;
+        const { reqId } = req.params;
+        const { decision, adminAdvice } = req.body;
+
+        const request = await AssetRequest.findOne({
+            where: {
+                req_id: reqId,
+                company_id: companyId,
+            },
             include: [
-                { model: AssetRequestItem, as: "items" },
-                { model: User, as: "requestedBy" },
+                {
+                    model: AssetRequestItem,
+                    as: "items",
+                    where: { company_id: companyId },
+                },
+                {
+                    model: User,
+                    as: "requestedBy",
+                },
             ],
             transaction: t,
             lock: t.LOCK.UPDATE,
@@ -537,14 +510,18 @@ export const decideAssetRequest = async (req, res) => {
 
         if (decision === "APPROVED") {
             for (const item of request.items) {
-                const asset = await Asset.findByPk(item.asset_id, {
+                const asset = await Asset.findOne({
+                    where: {
+                        asset_id: item.asset_id,
+                        company_id: companyId,
+                    },
                     transaction: t,
                     lock: t.LOCK.UPDATE,
                 });
 
-                if (asset.qty < item.requested_qty) {
+                if (!asset || asset.qty < item.requested_qty) {
                     throw new Error(
-                        `Insufficient stock for ${asset.asset_name}`
+                        `Insufficient stock for ${asset?.asset_name ?? "Asset"}`
                     );
                 }
 
@@ -553,87 +530,73 @@ export const decideAssetRequest = async (req, res) => {
             }
         }
 
-        request.admin_approval = decision;
-        request.admin_user_id = adminId;
-        request.admin_advice = adminAdvice || null;
+        await request.update(
+            {
+                admin_approval: decision,
+                admin_user_id: adminId,
+                admin_advice: adminAdvice ?? null,
+            },
+            { transaction: t }
+        );
 
-        await request.save({ transaction: t });
         await t.commit();
-
-        /* ================= SEND NOTIFICATIONS ================= */
-
-        const template = requestDecisionTemplates({
-            decision,
-            siteName: request.site_name,
-            requesterName: request.requestedBy.fullName,
-        });
-
-        // Email
-        // await transporter.sendMail({
-        //     from: `"KDM Engineers" <${process.env.MAIL_USER}>`,
-        //     to: request.requestedBy.email,
-        //     subject: template.subject,
-        //     text: template.message,
-        // });
-
-        // WhatsApp
-        // await sendWhatsappMessage({
-        //     to: request.requestedBy.mobile,
-        //     message: template.message,
-        // });
-
         res.json({ success: true });
     } catch (err) {
         await t.rollback();
-        console.error(err);
         res.status(400).json({ message: err.message });
     }
 };
 
+
 //FETCH ASSET REQUEST BY ID
 export const getAssetRequestById = async (req, res) => {
     try {
+        const companyId = req.user.company_id;
         const { reqId } = req.params;
 
         const request = await AssetRequest.findOne({
-            where: { req_id: reqId },
+            where: {
+                req_id: reqId,
+                company_id: companyId,
+            },
             include: [
                 {
                     model: User,
                     as: "requestedBy",
-                    attributes: ["fullName",],
+                    attributes: ["fullName"],
                 },
                 {
                     model: User,
                     as: "approvedBy",
                     attributes: ["fullName"],
                 },
-
-
                 {
                     model: SiteData,
                     as: "site",
+                    where: { company_id: companyId },
                     attributes: [
                         "site_id",
                         "bridge_no",
                         "location",
                         "site_division",
-                        "site_last_date"
+                        "site_last_date",
                     ],
                 },
-
                 {
                     model: AssetRequestItem,
                     as: "items",
+                    where: { company_id: companyId },
                     include: [
                         {
                             model: Asset,
                             as: "asset",
+                            where: { company_id: companyId },
                             attributes: [
                                 "asset_id",
                                 "asset_name",
                                 "units",
-                                "qty", 'asset_image'
+                                "qty",
+                                "asset_image",
                             ],
                         },
                     ],
@@ -647,10 +610,10 @@ export const getAssetRequestById = async (req, res) => {
 
         res.json(request);
     } catch (err) {
-        console.error(err);
         res.status(500).json({ message: "Failed to fetch request" });
     }
 };
+
 
 
 //MARK ASSET REQUEST AS ALLOCATED
@@ -686,11 +649,17 @@ export const getAssetRequestById = async (req, res) => {
 
 export const allocateAssetRequest = async (req, res) => {
     const { reqId } = req.params;
+    const companyId = req.user.company_id;
+
     const transaction = await sequelize.transaction();
 
     try {
-        // 1️⃣ Fetch current request
-        const request = await AssetRequest.findByPk(reqId, {
+        // 1️⃣ Fetch request (company scoped)
+        const request = await AssetRequest.findOne({
+            where: {
+                req_id: reqId,
+                company_id: companyId,
+            },
             transaction,
             lock: transaction.LOCK.UPDATE,
         });
@@ -707,45 +676,52 @@ export const allocateAssetRequest = async (req, res) => {
             });
         }
 
-        // 2️⃣ Check if another allocated request exists for same site
+        // 2️⃣ Check allocated request for same site + same company
         const existingAllocatedRequest = await AssetRequest.findOne({
             where: {
                 site_id: request.site_id,
                 allocated: 1,
+                company_id: companyId,
             },
             transaction,
             lock: transaction.LOCK.UPDATE,
         });
 
         if (existingAllocatedRequest) {
-            // 3️⃣ Re-assign items to already allocated request
+            // 3️⃣ Merge items
             await AssetRequestItem.update(
                 { req_id: existingAllocatedRequest.req_id },
                 {
-                    where: { req_id: request.req_id },
+                    where: {
+                        req_id: request.req_id,
+                        company_id: companyId,
+                    },
                     transaction,
                 }
             );
 
             await AssetRequest.destroy({
-                where: { req_id: request.req_id },
+                where: {
+                    req_id: request.req_id,
+                    company_id: companyId,
+                },
                 transaction,
             });
-
 
             await transaction.commit();
 
             return res.json({
                 success: true,
-                message:
-                    "Request items merged into existing allocated request",
+                message: "Request items merged into existing allocated request",
                 merged_into_req_id: existingAllocatedRequest.req_id,
             });
         }
 
-        // 4️⃣ No allocated request exists → allocate current one
-        request.allocated = 1;
-        await request.save({ transaction });
+        // 4️⃣ Allocate current request
+        await request.update(
+            { allocated: 1 },
+            { transaction }
+        );
 
         await transaction.commit();
 
@@ -765,13 +741,17 @@ export const allocateAssetRequest = async (req, res) => {
 };
 
 
+
 //FETCH ALLOCATED ASSET REQUESTS
 export const getAllocatedAssetRequests = async (req, res, next) => {
     try {
+        const companyId = req.user.company_id;
+
         const requests = await AssetRequest.findAll({
             where: {
                 admin_approval: "APPROVED",
                 allocated: 1,
+                company_id: companyId,
             },
             order: [["requested_at", "DESC"]],
             include: [
@@ -780,12 +760,10 @@ export const getAllocatedAssetRequests = async (req, res, next) => {
                     as: "requestedBy",
                     attributes: ["id", "fullName", "username"],
                 },
-
-
-                // ✅ ADD SITE JOIN
                 {
                     model: SiteData,
                     as: "site",
+                    where: { company_id: companyId },
                     attributes: [
                         "site_id",
                         "bridge_no",
@@ -794,15 +772,15 @@ export const getAllocatedAssetRequests = async (req, res, next) => {
                         "site_last_date",
                     ],
                 },
-
-
                 {
                     model: AssetRequestItem,
                     as: "items",
+                    where: { company_id: companyId },
                     include: [
                         {
                             model: Asset,
                             as: "asset",
+                            where: { company_id: companyId },
                             attributes: ["asset_id", "asset_name", "units"],
                         },
                     ],
@@ -816,16 +794,21 @@ export const getAllocatedAssetRequests = async (req, res, next) => {
     }
 };
 
+
 //FETCHING ALLOCATED ASSET REQ BY ID
 export const getAllocatedAssetRequestById = async (req, res, next) => {
     try {
         const { reqId } = req.params;
+        const companyId = req.user.company_id;
+
+        // console.log(`Fetching allocated request with ID ${reqId} for company ${companyId}`)
 
         const request = await AssetRequest.findOne({
             where: {
                 req_id: reqId,
                 admin_approval: "APPROVED",
                 allocated: true,
+                company_id: companyId,
             },
             include: [
                 {
@@ -841,31 +824,46 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
                 {
                     model: SiteData,
                     as: "site",
-                    attributes: [
-                        "site_id",
-                        "bridge_no",
-                        "location",
-                        "site_division",
-                        "site_last_date",
-                    ],
+                    where: { company_id: companyId },
+                    // attributes: [
+                    //     "site_id",
+                    //     "bridge_no",
+                    //     "location",
+                    //     "site_division",
+                    //     "site_last_date",
+                    // ], 
+                    required: false,
                 },
                 {
                     model: AssetRequestItem,
                     as: "items",
+                    // where: { company_id: companyId }, required: false,
                     include: [
                         {
                             model: Asset,
                             as: "asset",
+                            // where: { company_id: companyId },
                             attributes: [
                                 "asset_id",
                                 "asset_name",
                                 "units",
-                                "asset_type", "asset_condition", 'asset_status', 'remarks'
+                                "asset_type",
+                                "asset_condition",
+                                "asset_status",
+                                "remarks",
                             ],
                         },
                         {
                             model: AssetRequestItemImage,
                             as: "images",
+                            // where: { company_id: companyId },
+                            where: {
+                                [Op.or]: [
+                                    { company_id: companyId },
+                                    { company_id: null },
+                                ],
+                            },
+
                             attributes: [
                                 "id",
                                 "image_url",
@@ -879,11 +877,13 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
                         {
                             model: AssetReturnRequest,
                             as: "returnRequests",
+                            // where: { company_id: companyId },
                             attributes: [
                                 "return_id",
                                 "request_item_id",
                                 "status",
-                                "return_type", 'receiver_remarks'
+                                "return_type",
+                                "receiver_remarks",
                             ],
                             include: [
                                 {
@@ -907,6 +907,7 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
                                 {
                                     model: AssetReturnItem,
                                     as: "items",
+                                    // where: { company_id: companyId },
                                     attributes: [
                                         "id",
                                         "return_qty",
@@ -915,7 +916,8 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
                                     include: [
                                         {
                                             model: AssetReturnImage,
-                                            as: "images", // ✅ THIS IS THE KEY
+                                            as: "images",
+                                            // where: { company_id: companyId },
                                             attributes: [
                                                 "id",
                                                 "image_url",
@@ -942,6 +944,8 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
             ],
         });
 
+        // console.log("Fetched allocated request22:", request?.toJSON());
+
         if (!request) {
             return res.status(404).json({
                 message: "Allocated request not found",
@@ -957,49 +961,70 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
 
 
 
+
 //UPDATE SITE END DATE
 export const updateSiteEndDate = async (req, res) => {
-    const { reqId } = req.params;
-    const { site_end_date } = req.body;
+    try {
+        const { reqId } = req.params;
+        const { site_end_date } = req.body;
+        const { company_id } = req.user;
 
-    await AssetRequest.update(
-        { site_due_date: site_end_date },
-        { where: { req_id: reqId } }
-    );
+        if (!site_end_date) {
+            return res.status(400).json({ message: "site_end_date is required" });
+        }
 
-    res.json({ success: true });
+        const [updated] = await AssetRequest.update(
+            { site_due_date: site_end_date },
+            {
+                where: {
+                    req_id: reqId,
+                    company_id, // 🔐 tenant isolation
+                },
+            }
+        );
+
+        if (!updated) {
+            return res.status(404).json({
+                message: "Asset request not found for this company",
+            });
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("UPDATE SITE END DATE ERROR:", err);
+        res.status(500).json({ message: "Server error" });
+    }
 };
+
 
 
 //RECORD ASSET USAGE
 export const uploadUsageImage = async (req, res) => {
-    // console.log('triggered', req.params, req.body)
     try {
         const { request_item_id } = req.params;
         const { usage_qty, asset_condition } = req.body;
+        const { company_id } = req.user;
 
         if (!req.file) {
-            return res.status(400).json({
-                message: "Usage image is required",
-            });
+            return res.status(400).json({ message: "Usage image is required" });
         }
 
-        const item = await AssetRequestItem.findByPk(
-            request_item_id,
-            { include: ["images"] }
-        );
+        const item = await AssetRequestItem.findOne({
+            where: {
+                id: request_item_id,
+                company_id, // 🔐
+            },
+            include: ["images"],
+        });
 
         if (!item) {
             return res.status(404).json({
-                message: "Asset request item not found",
+                message: "Asset request item not found for this company",
             });
         }
 
         const usedQty =
-            item.images?.reduce(
-                (s, i) => s + i.usage_qty,
-                0
-            ) || 0;
+            item.images?.reduce((sum, img) => sum + Number(img.usage_qty), 0) || 0;
 
         if (usedQty + Number(usage_qty) > item.requested_qty) {
             return res.status(400).json({
@@ -1007,21 +1032,16 @@ export const uploadUsageImage = async (req, res) => {
             });
         }
 
-        const image_url = await uploadDoc(
-            req.file,
-            "asset-usage"
-        );
+        const image_url = await uploadDoc(req.file, "asset-usage");
 
-        const record =
-            await AssetRequestItemImage.create({
-                request_item_id,
-                image_url,
-                usage_qty,
-                asset_condition,
-                uploaded_by: req.user.id,
-            });
-
-        // console.log(record, 'rec567')
+        const record = await AssetRequestItemImage.create({
+            request_item_id,
+            image_url,
+            usage_qty,
+            asset_condition,
+            uploaded_by: req.user.id,
+            company_id, // 🔐 strongly recommended
+        });
 
         res.json(record);
     } catch (err) {
@@ -1033,16 +1053,19 @@ export const uploadUsageImage = async (req, res) => {
 };
 
 
+
 // FETCHING ASSET REQUEST ITEM IMAGE RECORDS
 export const getUsageImages = async (req, res) => {
-    const { reqId } = req.params;
-
     try {
+        const { reqId } = req.params;
+        const { company_id } = req.user;
+
         const items = await AssetRequestItem.findAll({
-            where: { req_id: reqId },
-
+            where: {
+                req_id: reqId,
+                company_id, // 🔐
+            },
             attributes: ["id", "asset_id", "requested_qty"],
-
             include: [
                 {
                     model: AssetRequestItemImage,
@@ -1056,35 +1079,58 @@ export const getUsageImages = async (req, res) => {
                     ],
                 },
             ],
-
             order: [
-                ["id", "ASC"], // item order
-                [{ model: AssetRequestItemImage, as: "images" }, "uploaded_at", "DESC"], // latest images first
+                ["id", "ASC"],
+                [
+                    { model: AssetRequestItemImage, as: "images" },
+                    "uploaded_at",
+                    "DESC",
+                ],
             ],
         });
 
         res.json(items);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        console.error("GET USAGE IMAGES ERROR:", err);
+        res.status(500).json({ message: "Server error" });
     }
 };
 
 
 
+
 //Asset Request Item Usage - Status Update(REQUESTED)
 export const requestSpareApproval = async (req, res) => {
-    const { request_item_id, remarks } = req.body;
+    try {
+        const { request_item_id, remarks } = req.body;
+        const { company_id } = req.user;
 
-    await AssetRequestItem.update(
-        {
-            spare_status: "REQUESTED",
-            spare_remarks: remarks || null,
-        },
-        { where: { id: request_item_id } }
-    );
+        const [updated] = await AssetRequestItem.update(
+            {
+                spare_status: "REQUESTED",
+                spare_remarks: remarks || null,
+            },
+            {
+                where: {
+                    id: request_item_id,
+                    company_id, // 🔐
+                },
+            }
+        );
 
-    res.json({ message: "Spare approval requested" });
+        if (!updated) {
+            return res.status(404).json({
+                message: "Request item not found for this company",
+            });
+        }
+
+        res.json({ message: "Spare approval requested" });
+    } catch (err) {
+        console.error("REQUEST SPARE APPROVAL ERROR:", err);
+        res.status(500).json({ message: "Server error" });
+    }
 };
+
 
 
 //Asset Request Item Usage - Status Update(APPROVE or REJECT)
@@ -1092,17 +1138,27 @@ export const approveSpareRequest = async (req, res) => {
     try {
         const { request_item_id } = req.params;
         const { decision } = req.body;
-        const user = req.user; // from JWT middleware
+        const { role, company_id, id: user_id } = req.user;
 
-        // 🔒 Only admin / inventory roles
-        if (!["ADMIN", "INVENTORY_MANAGER"].includes(user.role)) {
+        if (!["ADMIN", "INVENTORY_MANAGER"].includes(role)) {
             return res.status(403).json({ message: "Not authorized" });
         }
 
-        const item = await AssetRequestItem.findByPk(request_item_id);
+        if (!["APPROVED", "REJECTED"].includes(decision)) {
+            return res.status(400).json({ message: "Invalid decision" });
+        }
+
+        const item = await AssetRequestItem.findOne({
+            where: {
+                id: request_item_id,
+                company_id, // 🔐
+            },
+        });
 
         if (!item) {
-            return res.status(404).json({ message: "Request item not found" });
+            return res.status(404).json({
+                message: "Request item not found for this company",
+            });
         }
 
         if (item.spare_status !== "REQUESTED") {
@@ -1111,7 +1167,10 @@ export const approveSpareRequest = async (req, res) => {
             });
         }
 
-        item.spare_status = decision; // APPROVED or REJECTED
+        item.spare_status = decision;
+        item.spare_approved_by = user_id;
+        item.spare_approved_at = new Date();
+
         await item.save();
 
         res.json({
@@ -1120,10 +1179,11 @@ export const approveSpareRequest = async (req, res) => {
             decision,
         });
     } catch (err) {
-        console.error(err);
+        console.error("APPROVE SPARE REQUEST ERROR:", err);
         res.status(500).json({ message: "Server error" });
     }
 };
+
 
 
 
@@ -1138,28 +1198,38 @@ export const initiateReturnRequest = async (req, res) => {
             to_site_id,
             asset_id,
             return_qty,
-            asset_condition, receiver_remarks, received_by
+            asset_condition,
+            receiver_remarks,
+            received_by,
         } = req.body;
 
-        // console.log(received_by, 'received_by78')
+        const { id: userId, company_id } = req.user;
 
-        const imageFiles = req.files?.length ? req.files : req.file ? [req.file] : [];
-        const userId = req.user.id;
+        const imageFiles = req.files?.length
+            ? req.files
+            : req.file
+                ? [req.file]
+                : [];
 
         // =====================================================
-        // STEP 1: FETCH ORIGINAL REQUEST ITEM
+        // STEP 1: FETCH ORIGINAL REQUEST ITEM (🔐 company safe)
         // =====================================================
-        const requestItem = await AssetRequestItem.findByPk(request_item_id, {
+        const requestItem = await AssetRequestItem.findOne({
+            where: {
+                id: request_item_id,
+                company_id,
+            },
             attributes: ["requested_qty", "spare_item"],
             transaction: t,
+            lock: t.LOCK.UPDATE,
         });
 
-        // console.log(requestItem, 'requestItem786')
-
-        if (!requestItem) throw new Error("Invalid request item");
+        if (!requestItem) {
+            throw new Error("Invalid request item for this company");
+        }
 
         // =====================================================
-        // STEP 2: CALCULATE ALREADY RETURNED
+        // STEP 2: CALCULATE ALREADY RETURNED (🔐 scoped)
         // =====================================================
         const alreadyReturned =
             (await AssetReturnItem.sum("return_qty", {
@@ -1167,39 +1237,54 @@ export const initiateReturnRequest = async (req, res) => {
                     {
                         model: AssetReturnRequest,
                         as: "returnRequest",
-                        where: { request_item_id },
+                        where: {
+                            request_item_id,
+                            company_id,
+                        },
                         attributes: [],
                     },
                 ],
                 transaction: t,
             })) || 0;
 
-        const remainingReturnable = requestItem.requested_qty - alreadyReturned;
+        const remainingReturnable =
+            requestItem.requested_qty - alreadyReturned;
 
         if (return_qty > remainingReturnable) {
-            throw new Error(`Only ${remainingReturnable} quantity left to return`);
+            throw new Error(
+                `Only ${remainingReturnable} quantity left to return`
+            );
         }
 
         // =====================================================
-        // STEP 3: CREATE RETURN REQUEST
+        // STEP 3: CREATE RETURN REQUEST (🔐 company bound)
         // =====================================================
-        const returnReq = await AssetReturnRequest.create({
-            return_id: uuid(),
-            request_item_id,
-            from_site_id,
-            to_site_id: to_site_id || null,
-            return_type,
-            initiated_by: received_by,
-            status: "INITIATED",
-            receiver_remarks: receiver_remarks || null,
-        }, { transaction: t });
+        const returnReq = await AssetReturnRequest.create(
+            {
+                return_id: uuid(),
+                request_item_id,
+                from_site_id,
+                to_site_id: to_site_id || null,
+                return_type,
+                initiated_by: received_by,
+                status: "INITIATED",
+                receiver_remarks: receiver_remarks || null,
+                company_id,
+            },
+            { transaction: t }
+        );
 
-        const returnItem = await AssetReturnItem.create({
-            id: uuid(),
-            return_id: returnReq.return_id,
-            asset_id,
-            return_qty, spare_check: requestItem.spare_item
-        }, { transaction: t });
+        const returnItem = await AssetReturnItem.create(
+            {
+                id: uuid(),
+                return_id: returnReq.return_id,
+                asset_id,
+                return_qty,
+                spare_check: requestItem.spare_item,
+                company_id,
+            },
+            { transaction: t }
+        );
 
         // =====================================================
         // STEP 4: IMAGE COUNT SAFETY
@@ -1209,19 +1294,23 @@ export const initiateReturnRequest = async (req, res) => {
         }
 
         // =====================================================
-        // STEP 5: SAVE IMAGES
+        // STEP 5: SAVE IMAGES (🔐)
         // =====================================================
         for (const file of imageFiles) {
             const imageUrl = await uploadDoc(file, "asset-return");
 
-            await AssetReturnImage.create({
-                id: uuid(),
-                return_item_id: returnItem.id,
-                image_url: imageUrl,
-                stage: "DISPATCH",
-                asset_condition,
-                uploaded_by: userId,
-            }, { transaction: t });
+            await AssetReturnImage.create(
+                {
+                    id: uuid(),
+                    return_item_id: returnItem.id,
+                    image_url: imageUrl,
+                    stage: "DISPATCH",
+                    asset_condition,
+                    uploaded_by: userId,
+                    company_id,
+                },
+                { transaction: t }
+            );
         }
 
         await t.commit();
@@ -1234,29 +1323,32 @@ export const initiateReturnRequest = async (req, res) => {
                 returned_qty: alreadyReturned + Number(return_qty),
             },
         });
-
     } catch (e) {
         await t.rollback();
+        console.error("initiateReturnRequest error:", e);
         res.status(500).json({ error: e.message });
     }
 };
 
 
+
 //REVIEW RETURN ITEMS
 export const reviewReturnRequest = async (req, res) => {
     const { return_id, decision, inventory_remarks, approvedAdminId } = req.body;
+    const { company_id } = req.user;
 
     const t = await sequelize.transaction();
-
-
-
     try {
         const request = await AssetReturnRequest.findOne({
-            where: { return_id },
+            where: {
+                return_id,
+                company_id,
+            },
             include: [
                 {
                     model: AssetReturnItem,
                     as: "items",
+                    where: { company_id },
                     include: [{ model: Asset, as: "asset" }],
                 },
             ],
@@ -1266,7 +1358,9 @@ export const reviewReturnRequest = async (req, res) => {
 
         if (!request) {
             await t.rollback();
-            return res.status(404).json({ message: "Return request not found" });
+            return res
+                .status(404)
+                .json({ message: "Return request not found for this company" });
         }
 
         // 🚫 REJECT FLOW
@@ -1282,7 +1376,10 @@ export const reviewReturnRequest = async (req, res) => {
             await AssetReturnItem.update(
                 { return_qty: 0 },
                 {
-                    where: { return_id },
+                    where: {
+                        return_id,
+                        company_id,
+                    },
                     transaction: t,
                 }
             );
@@ -1301,9 +1398,7 @@ export const reviewReturnRequest = async (req, res) => {
                 { transaction: t }
             );
 
-            // ============================================
-            // 🏢 CASE 1: RETURN TO OFFICE
-            // ============================================
+            // 🏢 RETURN TO OFFICE
             if (request.return_type === "RETURN_TO_OFFICE") {
                 for (const item of request.items) {
                     await item.asset.increment("qty", {
@@ -1313,21 +1408,20 @@ export const reviewReturnRequest = async (req, res) => {
                 }
             }
 
-            // ============================================
-            // 🔁 CASE 2: TRANSFER TO ANOTHER SITE
-            // ============================================
+            // 🔁 TRANSFER TO ANOTHER SITE
             if (
                 request.return_type === "TRANSFER_TO_SITE" &&
                 request.to_site_id
             ) {
-                // 1️⃣ Check if AssetRequest already exists for this return
                 let assetRequest = await AssetRequest.findOne({
-                    where: { site_id: request.to_site_id },
+                    where: {
+                        site_id: request.to_site_id,
+                        company_id,
+                    },
                     transaction: t,
                     lock: t.LOCK.UPDATE,
                 });
 
-                // 2️⃣ If not exists → create
                 if (!assetRequest) {
                     assetRequest = await AssetRequest.create(
                         {
@@ -1340,25 +1434,23 @@ export const reviewReturnRequest = async (req, res) => {
                             request_remarks: `Auto-created from asset transfer (Return ID: ${request.return_id})`,
                             allocated: 1,
                             return_identity: request.return_id,
+                            company_id,
                         },
                         { transaction: t }
                     );
                 }
 
-                // console.log(request.items, 'request.items')
-
-                // 3️⃣ Create request items using resolved req_id
                 const requestItems = request.items.map((item) => ({
                     req_id: assetRequest.req_id,
                     asset_id: item.asset_id,
                     requested_qty: item.return_qty,
                     spare_item: item.spare_check,
+                    company_id,
                 }));
 
                 await AssetRequestItem.bulkCreate(requestItems, {
                     transaction: t,
                 });
-
             }
 
             await t.commit();
@@ -1368,37 +1460,45 @@ export const reviewReturnRequest = async (req, res) => {
         }
 
         await t.rollback();
-        return res.status(400).json({ message: "Invalid decision value" });
+        res.status(400).json({ message: "Invalid decision value" });
     } catch (error) {
         await t.rollback();
         console.error("reviewReturnRequest error:", error);
-        return res.status(500).json({ message: "Internal server error" });
+        res.status(500).json({ message: "Internal server error" });
     }
 };
 
 
+
 //Request Servicing
 export const requestServicing = async (req, res) => {
-    // console.log('trigerred')
-    const { request_item_id, remarks,
+    const {
+        request_item_id,
+        remarks,
         service_person_name,
         service_person_mobile,
         serviced_date,
     } = req.body;
-    // console.log(
-    //     "DEBUG servicing_remarks:",
-    //     remarks,
-    //     typeof remarks,
-    //     JSON.stringify(remarks)
-    // );
-    const item = await AssetRequestItem.findByPk(request_item_id);
-    if (!item) return res.status(404).json({ message: "Request item not found" });
+
+    const { company_id } = req.user;
+
+    const item = await AssetRequestItem.findOne({
+        where: {
+            id: request_item_id,
+            company_id,
+        },
+    });
+
+    if (!item) {
+        return res
+            .status(404)
+            .json({ message: "Request item not found for this company" });
+    }
 
     await item.update({
         servicing_status: "PENDING",
         servicing_remarks: remarks?.trim() || null,
         servicing_requested_at: new Date(),
-
         service_person_name: service_person_name || null,
         service_person_mobile: service_person_mobile || null,
         servicing_completed_at: serviced_date || null,
@@ -1408,12 +1508,24 @@ export const requestServicing = async (req, res) => {
 };
 
 
+
 //Review Servicing
 export const reviewServicing = async (req, res) => {
     const { request_item_id, decision, remarks } = req.body;
+    const { company_id } = req.user;
 
-    const item = await AssetRequestItem.findByPk(request_item_id);
-    if (!item) return res.status(404).json({ message: "Request item not found" });
+    const item = await AssetRequestItem.findOne({
+        where: {
+            id: request_item_id,
+            company_id,
+        },
+    });
+
+    if (!item) {
+        return res
+            .status(404)
+            .json({ message: "Request item not found for this company" });
+    }
 
     await item.update({
         servicing_status: decision,
@@ -1421,34 +1533,37 @@ export const reviewServicing = async (req, res) => {
         servicing_reviewed_at: new Date(),
     });
 
-    // Only if approved, change asset physical condition
-    // if (decision === "APPROVED") {
-    //     await Asset.update(
-    //         { asset_condition: "SERVICING" },
-    //         { where: { asset_id: item.asset_id } }
-    //     );
-    // }
-
     res.json({ message: "Servicing decision recorded" });
 };
+
 
 
 //SERVICING OUTCOME
 export const completeServicing = async (req, res) => {
     const { request_item_id, outcome } = req.body;
+    const { company_id } = req.user;
 
     if (!["COMPLETED", "SCRAPPED"].includes(outcome)) {
         return res.status(400).json({ message: "Invalid servicing outcome" });
     }
 
-    const item = await AssetRequestItem.findByPk(request_item_id);
-    if (!item) return res.status(404).json({ message: "Item not found" });
+    const item = await AssetRequestItem.findOne({
+        where: {
+            id: request_item_id,
+            company_id,
+        },
+    });
+
+    if (!item) {
+        return res
+            .status(404)
+            .json({ message: "Item not found for this company" });
+    }
 
     if (item.servicing_status !== "APPROVED") {
         return res.status(400).json({ message: "Item not in servicing" });
     }
 
-    // 🔹 CASE 1: Repair finished → Reset for next servicing cycle
     if (outcome === "COMPLETED") {
         await item.update({
             servicing_status: null,
@@ -1457,7 +1572,6 @@ export const completeServicing = async (req, res) => {
         });
     }
 
-    // 🔹 CASE 2: Asset scrapped → Permanently dead at request-item level
     if (outcome === "SCRAPPED") {
         await item.update({
             servicing_outcome: "SCRAPPED",
@@ -1467,9 +1581,6 @@ export const completeServicing = async (req, res) => {
 
     res.json({ message: "Servicing cycle closed" });
 };
-
-
-
 
 
 // export const markAsDispatched = async (req, res) => {

@@ -87,6 +87,11 @@ const AssetRequestItem = sequelize.define(
             allowNull: true,
         },
 
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
+
 
     },
     {
@@ -119,6 +124,12 @@ AssetRequestItem.associate = (models) => {
         foreignKey: "request_item_id",
         as: "returnRequests",
     });
+
+    AssetRequestItem.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 
 
 };

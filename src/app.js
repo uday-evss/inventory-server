@@ -7,6 +7,7 @@ import securityRoutes from "./routes/security.routes.js";
 import siteRoutes from './routes/site.routes.js';
 import { errorHandler } from "./middlewares/error.middleware.js";
 import dashboardRoutes from './routes/dashboard.routes.js';
+import companyRoutes from './routes/company.routes.js';
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/assets", assetRoutes);
 app.use("/api/sites", siteRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/companies", companyRoutes);
 
 
 

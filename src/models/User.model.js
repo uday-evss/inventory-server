@@ -60,14 +60,19 @@ const User = sequelize.define(
             type: DataTypes.STRING,
             allowNull: true,
         },
+
+        company_id: {
+            type: DataTypes.CHAR(36),
+            allowNull: false,
+        }
     },
     {
         tableName: "users",
         timestamps: true,
         indexes: [
-            { unique: true, fields: ["employeeId"] },
-            { unique: true, fields: ["email"] },
-            { unique: true, fields: ["username"] },
+            { unique: true, fields: ["employeeId", "company_id"] },
+            { unique: true, fields: ["email", "company_id"] },
+            { unique: true, fields: ["username", "company_id"] },
         ],
         charset: "utf8mb4",
         collate: "utf8mb4_bin",
@@ -83,6 +88,12 @@ User.associate = (models) => {
         foreignKey: "initiated_by",
         as: "assetReturns",
     });
+
+    User.belongsTo(models.Company, {
+        foreignKey: "company_id",
+        as: "company",
+    });
+
 
 
 }
