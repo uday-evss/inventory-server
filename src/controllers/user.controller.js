@@ -96,7 +96,6 @@ export const updateUser = async (req, res, next) => {
             });
         }
 
-
         if (resetPassword) {
             const hashed = await bcrypt.hash(resetPassword, 12);
 

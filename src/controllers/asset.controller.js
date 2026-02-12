@@ -9,7 +9,7 @@ const { Asset, AssetDocument, AssetRequest, AssetRequestItem, User, AssetRequest
 import { v4 as uuid } from "uuid";
 
 import { requestDecisionTemplates } from "../utils/assetReqDecision.js";
-import { transporter } from "../config/mailer.js";
+// import { transporter } from "../config/mailer.js";
 import { sendWhatsappMessage } from "../utils/sendWhatsapp.js";
 
 const uploadDoc = async (file, folder = "assets") => {
@@ -79,29 +79,103 @@ export const createAsset = async (req, res, next) => {
 
 
 //FETCH ASSETS
+// export const getAssets = async (req, res, next) => {
+//     try {
+//         const companyId = req.user.company_id;
+
+//         const assets = await Asset.findAll({
+//             where: { company_id: companyId },
+//             order: [["createdAt", "DESC"]],
+//             include: [
+//                 {
+//                     model: AssetDocument,
+//                     as: "documents",
+//                     where: { company_id: companyId },
+//                     required: false,
+//                 },
+//             ],
+//         });
+
+//         res.json(assets);
+//     } catch (err) {
+//         next(err);
+//     }
+// };
+
 export const getAssets = async (req, res, next) => {
     try {
         const companyId = req.user.company_id;
-
         const assets = await Asset.findAll({
             where: { company_id: companyId },
             order: [["createdAt", "DESC"]],
+            attributes: {
+                include: [
+                    // 🔢 SUM of pending requested qty
+                    [
+                        Sequelize.fn(
+                            "COALESCE",
+                            Sequelize.fn("SUM", Sequelize.col("pendingItems.requested_qty")),
+                            0
+                        ),
+                        "pending_requested_qty",
+                    ],
+                ],
+            },
             include: [
                 {
                     model: AssetDocument,
                     as: "documents",
                     where: { company_id: companyId },
+                    attributes: ["id", "document_url", "createdAt"],
                     required: false,
                 },
+                {
+                    model: AssetRequestItem,
+                    as: "pendingItems",
+                    where: { company_id: companyId },
+                    attributes: [],
+                    required: false,
+                    include: [
+                        {
+                            model: AssetRequest,
+                            attributes: [],
+                            as: "request",
+                            where: {
+                                admin_approval: "PENDING",
+                                company_id: companyId
+                            },
+                        },
+                    ],
+                },
             ],
+            group: ["Asset.asset_id", "documents.id"],
+            subQuery: false,
         });
 
-        res.json(assets);
+        // 🧠 Post-process for UX-friendly response
+        const response = assets.map((asset) => {
+            const assetJson = asset.toJSON();
+
+            const pendingQty = Number(assetJson.pending_requested_qty || 0);
+            const availableQty = assetJson.qty - pendingQty;
+            // console.log(assetJson.qty, pendingQty, availableQty);
+
+            return {
+                ...assetJson,
+                pending_requested_qty: pendingQty,
+                available_qty: availableQty,
+                availability_message:
+                    pendingQty > 0
+                        ? `Currently ${availableQty} ${assetJson.units} available. ${pendingQty} ${assetJson.units} are reserved in pending requests.`
+                        : `All ${availableQty} ${assetJson.units} are available`,
+            };
+        });
+
+        res.json(response);
     } catch (err) {
         next(err);
     }
 };
-
 
 /* helper: extract S3 key from full URL */
 const getS3KeyFromUrl = (url) => {
