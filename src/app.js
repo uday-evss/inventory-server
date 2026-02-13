@@ -11,31 +11,9 @@ import companyRoutes from './routes/company.routes.js';
 
 const app = express();
 
-app.use(cors({
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like Postman)
-        if (!origin) return callback(null, true);
 
-        const allowedOrigins = [
-            "http://localhost:5173",
-            "http://localhost:8080",
-            "https://inventory.kdmengineers.com"
-        ];
-
-        if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error("Not allowed by CORS"));
-        }
-    },
-    credentials: true,
-}));
-
-
-
-
-// app.use(cors());
-// app.options("*", cors());
+app.use(cors());
+app.options("*", cors());
 
 
 
