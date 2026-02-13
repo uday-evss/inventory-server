@@ -70,7 +70,7 @@ export const loginUser = async (req, res, next) => {
 export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
-        console.log(email, 'user')
+        // console.log(email, 'user')
         if (!email) {
             return res.status(400).json({ message: "Email is required" });
         }
@@ -130,11 +130,11 @@ export const forgotPassword = async (req, res) => {
         // });
 
 
-        await sendEmail({
-            to: user.email,
-            subject: "Reset Your Password - KDM Engineers",
-            html: htmlContent,
-        });
+        // await sendEmail({
+        //     to: user.email,
+        //     subject: "Reset Your Password - KDM Engineers",
+        //     html: htmlContent,
+        // });
 
 
         return res.status(200).json({

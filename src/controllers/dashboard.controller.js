@@ -354,6 +354,8 @@ export const getDashboardData = async (req, res) => {
             ],
         });
 
+        console.log(siteStatsRaw, 'siteStatsRaw')
+
         const siteStats = siteStatsRaw.map(site => {
             let allocated = 0,
                 used = 0,
