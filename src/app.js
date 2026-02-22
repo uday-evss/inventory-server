@@ -12,8 +12,21 @@ import companyRoutes from './routes/company.routes.js';
 const app = express();
 
 
-app.use(cors());
-app.options("*", cors());
+// app.use(cors());
+// app.options("*", cors());
+
+const corsOptions = {
+    origin: [
+        "http://localhost:5173",
+        "http://localhost:8080",   // 🔥 ADD THIS
+        "https://inventory.kdmengineers.com"
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 
 

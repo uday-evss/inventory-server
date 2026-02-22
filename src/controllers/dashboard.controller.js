@@ -299,7 +299,7 @@ const { Asset, AssetRequest, AssetRequestItemImage, AssetReturnRequest, SiteData
 
 export const getDashboardData = async (req, res) => {
     try {
-        const companyId = req.user.company_id; // 🔥 SINGLE SOURCE OF TRUTH
+        const companyId = req.user.company_id;
         const today = new Date();
 
         /* ================= SITE STATS ================= */
@@ -354,7 +354,7 @@ export const getDashboardData = async (req, res) => {
             ],
         });
 
-        console.log(siteStatsRaw, 'siteStatsRaw')
+
 
         const siteStats = siteStatsRaw.map(site => {
             let allocated = 0,
@@ -363,6 +363,8 @@ export const getDashboardData = async (req, res) => {
                 returned = 0;
 
             site.assetRequests?.forEach(req => {
+                if (!req.allocated) return;
+
                 req.items?.forEach(item => {
                     allocated += item.requested_qty || 0;
 
@@ -376,6 +378,7 @@ export const getDashboardData = async (req, res) => {
                     item.returnRequests?.forEach(ret => {
                         ret.items?.forEach(retItem => {
                             returned += retItem.return_qty || 0;
+
                             retItem.images?.forEach(img => {
                                 if (img.asset_condition === "DAMAGED") {
                                     damaged += retItem.return_qty || 0;
@@ -389,6 +392,36 @@ export const getDashboardData = async (req, res) => {
                     }
                 });
             });
+
+
+            // site.assetRequests?.forEach(req => {
+            //     console.log(req, 'req12')
+            //     req.items?.forEach(item => {
+            //         allocated += item.requested_qty || 0;
+
+            //         item.images?.forEach(img => {
+            //             used += img.usage_qty || 0;
+            //             if (img.asset_condition === "DAMAGED") {
+            //                 damaged += img.usage_qty || 0;
+            //             }
+            //         });
+
+            //         item.returnRequests?.forEach(ret => {
+            //             ret.items?.forEach(retItem => {
+            //                 returned += retItem.return_qty || 0;
+            //                 retItem.images?.forEach(img => {
+            //                     if (img.asset_condition === "DAMAGED") {
+            //                         damaged += retItem.return_qty || 0;
+            //                     }
+            //                 });
+            //             });
+            //         });
+
+            //         if (item.servicing_outcome === "SCRAPPED") {
+            //             damaged += item.requested_qty || 0;
+            //         }
+            //     });
+            // });
 
             return {
                 siteId: site.site_id,
