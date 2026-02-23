@@ -49,12 +49,12 @@ router.get(
 router.get("/asset-requests/:adminId", authenticate, getRequestsForAdmin);
 router.post("/asset-requests/decision/:reqId", authenticate, decideAssetRequest);
 router.get("/asset-requests/request/:reqId", authenticate, getAssetRequestById);
-router.patch(
+router.put(
     "/asset-requests/allocate/:reqId",
     authenticate,
     allocateAssetRequest
 );
-router.patch("/asset-requests/site-end-date/:reqId", authenticate, updateSiteEndDate);
+router.put("/asset-requests/site-end-date/:siteId", authenticate, updateSiteEndDate);
 router.post(
     "/asset-usage/:request_item_id",
     authenticate,
@@ -66,7 +66,7 @@ router.get("/usage-images/:reqId", authenticate, getUsageImages);
 
 router.post('/request-spare', authenticate, requestSpareApproval)
 
-router.patch("/spare-request/:request_item_id", authenticate, approveSpareRequest);
+router.put("/spare-request/:request_item_id", authenticate, approveSpareRequest);
 
 router.post(
     "/return/initiate",

@@ -232,6 +232,8 @@ export const updateAsset = async (req, res, next) => {
         const companyId = req.user.company_id;
         const assetId = req.params.id;
 
+        console.log(assetId, 'assetId')
+
         const asset = await Asset.findOne({
             where: {
                 asset_id: assetId,
@@ -409,12 +411,38 @@ export const createAssetRequest = async (req, res) => {
 
         await AssetRequestItem.bulkCreate(requestItems, { transaction });
 
+        // After bulkCreate but BEFORE commit
+        const fullRequest = await AssetRequest.findOne({
+            where: { req_id: assetRequest.req_id },
+            include: [
+                {
+                    model: User,
+                    as: "requestedBy",   // ✅ match alias exactly
+                    attributes: ["id", "fullName", "email", "mobile", "role"],
+                },
+                {
+                    model: User,
+                    as: "approvedBy",    // ✅ match alias exactly
+                    attributes: ["id", "fullName", "email", "mobile", "role"],
+                },
+                {
+                    model: SiteData,
+                    as: "site",          // ✅ matches your alias
+                },
+                {
+                    model: AssetRequestItem,
+                    as: "items",
+                },
+            ],
+            transaction,
+        });
+
         // 3️⃣ Commit
         await transaction.commit();
 
         return res.status(201).json({
             message: "Asset request created successfully",
-            data: assetRequest,
+            data: fullRequest,
         });
     } catch (error) {
         await transaction.rollback();
@@ -724,6 +752,7 @@ export const getAssetRequestById = async (req, res) => {
 export const allocateAssetRequest = async (req, res) => {
     const { reqId } = req.params;
     const companyId = req.user.company_id;
+
 
     const transaction = await sequelize.transaction();
 
@@ -1039,19 +1068,20 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
 //UPDATE SITE END DATE
 export const updateSiteEndDate = async (req, res) => {
     try {
-        const { reqId } = req.params;
+        const { siteId } = req.params;
         const { site_end_date } = req.body;
         const { company_id } = req.user;
+
 
         if (!site_end_date) {
             return res.status(400).json({ message: "site_end_date is required" });
         }
 
-        const [updated] = await AssetRequest.update(
-            { site_due_date: site_end_date },
+        const [updated] = await SiteData.update(
+            { site_last_date: site_end_date },
             {
                 where: {
-                    req_id: reqId,
+                    site_id: siteId,
                     company_id, // 🔐 tenant isolation
                 },
             }
