@@ -4,7 +4,7 @@ import User from "../models/User.model.js";
 // import { transporter } from "../config/mailer.js";
 import { generatePassword } from "../utils/generatePassword.js";
 import { forgotPasswordMail } from "../utils/forgotPassword.js";
-import { sendEmail } from "../config/mailer.js";
+// import { sendEmail } from "../config/mailer.js";
 
 
 

@@ -4,6 +4,7 @@ import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import db from "../models/index.js";
 import sequelize from "../config/database.js";
 import { Op, Sequelize } from "sequelize";
+import { sendGraphMail } from "../config/mailer.js";
 
 const { Asset, AssetDocument, AssetRequest, AssetRequestItem, User, AssetRequestItemImage, SiteData, AssetReturnRequest, AssetReturnItem, AssetReturnImage } = db;
 import { v4 as uuid } from "uuid";
@@ -435,6 +436,24 @@ export const createAssetRequest = async (req, res) => {
                 },
             ],
             transaction,
+        });
+
+        // 📧 Send approval email via Microsoft Graph
+        await sendGraphMail({
+            to: fullRequest.approvedBy?.email,
+            subject: `New Asset Request - ${fullRequest.req_id}`,
+            html: `
+    <h2>New Asset Request Created</h2>
+    <p><strong>Request ID:</strong> ${fullRequest.req_id}</p>
+    <p><strong>Requested By:</strong> ${fullRequest.requestedBy?.fullName}</p>
+    <p><strong>Site:</strong> ${fullRequest.site?.location}</p>
+    <p><strong>Priority:</strong> ${fullRequest.priority_level}</p>
+    <p><strong>Remarks:</strong> ${fullRequest.request_remarks || "No remarks"}</p>
+    <p>Please login to review the request.</p>
+    <a href="https://inventory.kdmengineers.com">
+      Open Dashboard
+    </a>
+  `,
         });
 
         // 3️⃣ Commit

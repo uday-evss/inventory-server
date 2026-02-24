@@ -8,8 +8,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.967.0",
+    "@azure/msal-node": "^3.8.8",
     "@sendgrid/mail": "^8.1.6",
-    "axios": "^1.13.2",
+    "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
