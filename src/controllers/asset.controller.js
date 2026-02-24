@@ -418,42 +418,191 @@ export const createAssetRequest = async (req, res) => {
             include: [
                 {
                     model: User,
-                    as: "requestedBy",   // ✅ match alias exactly
+                    as: "requestedBy",
                     attributes: ["id", "fullName", "email", "mobile", "role"],
                 },
                 {
                     model: User,
-                    as: "approvedBy",    // ✅ match alias exactly
+                    as: "approvedBy",
                     attributes: ["id", "fullName", "email", "mobile", "role"],
                 },
                 {
                     model: SiteData,
-                    as: "site",          // ✅ matches your alias
+                    as: "site",
                 },
                 {
                     model: AssetRequestItem,
                     as: "items",
+                    include: [
+                        {
+                            model: Asset,
+                            as: "asset",   // 🔥 THIS IS THE FIX
+                            attributes: ["asset_name", "units", "make"],
+                        },
+                    ],
                 },
             ],
             transaction,
         });
 
+        // console.log(fullRequest.items, 'items')
+
+        const priorityEmoji = fullRequest.priority_level === "HIGH" ? "🔴" : fullRequest.priority_level === "MEDIUM" ? "🟡" : "🟢";
         // 📧 Send approval email via Microsoft Graph
         await sendGraphMail({
             to: fullRequest.approvedBy?.email,
-            subject: `New Asset Request - ${fullRequest.req_id}`,
+            subject: `${priorityEmoji} New Asset Request | ${fullRequest.site?.location} | ${fullRequest.priority_level} Priority | Approval Required`,
             html: `
-    <h2>New Asset Request Created</h2>
-    <p><strong>Request ID:</strong> ${fullRequest.req_id}</p>
-    <p><strong>Requested By:</strong> ${fullRequest.requestedBy?.fullName}</p>
-    <p><strong>Site:</strong> ${fullRequest.site?.location}</p>
-    <p><strong>Priority:</strong> ${fullRequest.priority_level}</p>
-    <p><strong>Remarks:</strong> ${fullRequest.request_remarks || "No remarks"}</p>
-    <p>Please login to review the request.</p>
-    <a href="https://inventory.kdmengineers.com">
-      Open Dashboard
-    </a>
-  `,
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Asset Request</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+<tr>
+<td align="center">
+
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<!-- Header -->
+<tr>
+<td style="background-color:#f3f4f6;padding:30px;">
+<h1 style="color:#111827;margin:0;font-size:22px;letter-spacing:0.5px;">
+📦 Asset Request Notification
+</h1>
+<p style="color:#374151;margin:8px 0 0 0;font-size:14px;">
+Inventory Management System
+</p>
+</td>
+</tr>
+
+<!-- Status Badge -->
+<tr>
+<td style="padding:25px 30px 0 30px;">
+<span style="
+display:inline-block;
+padding:6px 14px;
+border-radius:50px;
+font-size:12px;
+font-weight:600;
+background:${fullRequest.priority_level === "HIGH" ? "#fee2e2" : fullRequest.priority_level === "MEDIUM" ? "#fef3c7" : "#e0f2fe"};
+color:${fullRequest.priority_level === "HIGH" ? "#b91c1c" : fullRequest.priority_level === "MEDIUM" ? "#92400e" : "#075985"};
+">
+${fullRequest.priority_level} PRIORITY
+</span>
+</td>
+</tr>
+
+<!-- Body -->
+<tr>
+<td style="padding:20px 30px 10px 30px;color:#374151;font-size:14px;line-height:1.6;">
+<p>Hello <strong>${fullRequest.approvedBy?.fullName}</strong>,</p>
+
+<p>
+A new asset request has been created and is awaiting your review.
+Below are the request details:
+</p>
+</td>
+</tr>
+
+<!-- Request Summary Card -->
+<tr>
+<td style="padding:10px 30px;">
+<table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;">
+<tr>
+<td style="font-size:13px;color:#6b7280;">Request ID</td>
+<td align="right" style="font-weight:600;color:#111827;">${fullRequest.req_id}</td>
+</tr>
+<tr>
+<td style="font-size:13px;color:#6b7280;padding-top:10px;">Requested By</td>
+<td align="right" style="font-weight:600;padding-top:10px;">${fullRequest.requestedBy?.fullName}</td>
+</tr>
+<tr>
+<td style="font-size:13px;color:#6b7280;padding-top:10px;">Site Location</td>
+<td align="right" style="font-weight:600;padding-top:10px;">
+${fullRequest.site?.location} | Bridge ${fullRequest.site?.bridge_no}
+</td>
+</tr>
+<tr>
+<td style="font-size:13px;color:#6b7280;padding-top:10px;">Requested On</td>
+<td align="right" style="font-weight:600;padding-top:10px;">
+${new Date(fullRequest.requested_at).toLocaleString()}
+</td>
+</tr>
+</table>
+</td>
+</tr>
+
+<!-- Items Section -->
+<tr>
+<td style="padding:20px 30px 0 30px;">
+<h3 style="margin:0 0 10px 0;color:#111827;font-size:16px;">
+Requested Items
+</h3>
+<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+<tr style="background:#f3f4f6;color:#374151;font-weight:600;">
+<td align="left">Asset Name</td>
+<td align="center">Qty</td>
+</tr>
+${fullRequest.items.map(item => `
+<tr style="border-bottom:1px solid #e5e7eb;">
+<td>${item.asset?.asset_name || "N/A"}</td>
+<td align="center">${item.requested_qty}</td>
+</tr>
+`).join("")
+                }
+</table>
+</td>
+</tr>
+
+<!-- Remarks -->
+<tr>
+<td style="padding:20px 30px 0 30px;font-size:14px;color:#374151;">
+<strong>Remarks:</strong><br/>
+${fullRequest.request_remarks || "No additional remarks provided."}
+</td>
+</tr>
+
+<!-- CTA -->
+<tr>
+<td align="center" style="padding:30px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:14px 28px;
+background:#2563eb;
+color:#ffffff;
+text-decoration:none;
+border-radius:8px;
+font-weight:600;
+font-size:14px;
+box-shadow:0 6px 16px rgba(37,99,235,0.4);
+">
+Review & Approve Request
+</a>
+</td>
+</tr>
+
+<!-- Footer -->
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
+This is an automated notification from KDM Engineers Inventory System.<br/>
+© ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`
         });
 
         // 3️⃣ Commit
@@ -591,8 +740,6 @@ export const getRequestsForAdmin = async (req, res, next) => {
         next(err);
     }
 };
-
-
 
 
 //UPDATE ASSET REQUEST STATUS BY ADMIN
@@ -772,8 +919,44 @@ export const allocateAssetRequest = async (req, res) => {
     const { reqId } = req.params;
     const companyId = req.user.company_id;
 
-
     const transaction = await sequelize.transaction();
+
+
+    // After bulkCreate but BEFORE commit
+    const fullRequest = await AssetRequest.findOne({
+        where: { req_id: reqId },
+        include: [
+            {
+                model: User,
+                as: "requestedBy",
+                attributes: ["id", "fullName", "email", "mobile", "role"],
+            },
+            {
+                model: User,
+                as: "approvedBy",
+                attributes: ["id", "fullName", "email", "mobile", "role"],
+            },
+            {
+                model: SiteData,
+                as: "site",
+            },
+            {
+                model: AssetRequestItem,
+                as: "items",
+                include: [
+                    {
+                        model: Asset,
+                        as: "asset",   // 🔥 THIS IS THE FIX
+                        attributes: ["asset_name", "units", "make"],
+                    },
+                ],
+            },
+        ],
+        transaction,
+    });
+
+    // console.log(fullRequest, 'items')
+
 
     try {
         // 1️⃣ Fetch request (company scoped)
@@ -844,6 +1027,142 @@ export const allocateAssetRequest = async (req, res) => {
             { allocated: 1 },
             { transaction }
         );
+
+        await sendGraphMail({
+            to: fullRequest.approvedBy?.email,
+            subject: `✅ Assets Allocated | ${fullRequest.site?.location} | Request ID ${fullRequest.req_id}`,
+            html: `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Asset Allocation Confirmation</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+<tr>
+<td align="center">
+
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<!-- Header -->
+<tr>
+<td style="background-color:#ecfdf5;padding:30px;">
+<h1 style="color:#065f46;margin:0;font-size:22px;letter-spacing:0.5px;">
+✅ Asset Allocation Confirmed
+</h1>
+<p style="color:#047857;margin:8px 0 0 0;font-size:14px;">
+Inventory Management System
+</p>
+</td>
+</tr>
+
+<!-- Body -->
+<tr>
+<td style="padding:25px 30px 10px 30px;color:#374151;font-size:14px;line-height:1.6;">
+<p>Hello <strong>${fullRequest.approvedBy?.fullName}</strong>,</p>
+
+<p>
+This is to inform you that the approved asset request has been successfully 
+<strong>allocated and handed over</strong> to 
+<strong>${fullRequest.requestedBy?.fullName}</strong> 
+at the designated site.
+</p>
+</td>
+</tr>
+
+<!-- Summary Card -->
+<tr>
+<td style="padding:10px 30px;">
+<table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;">
+<tr>
+<td style="font-size:13px;color:#6b7280;">Request ID</td>
+<td align="right" style="font-weight:600;color:#111827;">${fullRequest.req_id}</td>
+</tr>
+<tr>
+<td style="font-size:13px;color:#6b7280;padding-top:10px;">Site Location</td>
+<td align="right" style="font-weight:600;padding-top:10px;">
+${fullRequest.site?.location} | Bridge ${fullRequest.site?.bridge_no}
+</td>
+</tr>
+<tr>
+<td style="font-size:13px;color:#6b7280;padding-top:10px;">Allocated On</td>
+<td align="right" style="font-weight:600;padding-top:10px;">
+${new Date().toLocaleString()}
+</td>
+</tr>
+</table>
+</td>
+</tr>
+
+<!-- Items -->
+<tr>
+<td style="padding:20px 30px 0 30px;">
+<h3 style="margin:0 0 10px 0;color:#111827;font-size:16px;">
+Allocated Items
+</h3>
+<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+<tr style="background:#f3f4f6;color:#374151;font-weight:600;">
+<td align="left">Asset Name</td>
+<td align="center">Quantity</td>
+</tr>
+${fullRequest.items.map(item => `
+<tr style="border-bottom:1px solid #e5e7eb;">
+<td>${item.asset?.asset_name || "N/A"}</td>
+<td align="center">${item.requested_qty}</td>
+</tr>
+`).join("")}
+</table>
+</td>
+</tr>
+
+<!-- Footer Message -->
+<tr>
+<td style="padding:25px 30px;font-size:14px;color:#374151;">
+This serves as an official acknowledgment that the above assets 
+have been delivered and recorded in the system.
+</td>
+</tr>
+
+<!-- CTA -->
+<tr>
+<td align="center" style="padding:30px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:14px 28px;
+background:#16a34a;
+color:#ffffff;
+text-decoration:none;
+border-radius:8px;
+font-weight:600;
+font-size:14px;
+box-shadow:0 6px 16px rgba(22,163,74,0.4);
+">
+View Allocation Details
+</a>
+</td>
+</tr>
+
+<!-- Footer -->
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
+This is an automated confirmation from KDM Engineers Inventory System.<br/>
+© ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`
+        });
 
         await transaction.commit();
 
