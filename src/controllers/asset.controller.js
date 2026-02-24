@@ -922,40 +922,7 @@ export const allocateAssetRequest = async (req, res) => {
     const transaction = await sequelize.transaction();
 
 
-    // After bulkCreate but BEFORE commit
-    const fullRequest = await AssetRequest.findOne({
-        where: { req_id: reqId },
-        include: [
-            {
-                model: User,
-                as: "requestedBy",
-                attributes: ["id", "fullName", "email", "mobile", "role"],
-            },
-            {
-                model: User,
-                as: "approvedBy",
-                attributes: ["id", "fullName", "email", "mobile", "role"],
-            },
-            {
-                model: SiteData,
-                as: "site",
-            },
-            {
-                model: AssetRequestItem,
-                as: "items",
-                include: [
-                    {
-                        model: Asset,
-                        as: "asset",   // 🔥 THIS IS THE FIX
-                        attributes: ["asset_name", "units", "make"],
-                    },
-                ],
-            },
-        ],
-        transaction,
-    });
 
-    // console.log(fullRequest, 'items')
 
 
     try {
@@ -1027,6 +994,39 @@ export const allocateAssetRequest = async (req, res) => {
             { allocated: 1 },
             { transaction }
         );
+
+        // After bulkCreate but BEFORE commit
+        const fullRequest = await AssetRequest.findOne({
+            where: { req_id: reqId },
+            include: [
+                {
+                    model: User,
+                    as: "requestedBy",
+                    attributes: ["id", "fullName", "email", "mobile", "role"],
+                },
+                {
+                    model: User,
+                    as: "approvedBy",
+                    attributes: ["id", "fullName", "email", "mobile", "role"],
+                },
+                {
+                    model: SiteData,
+                    as: "site",
+                },
+                {
+                    model: AssetRequestItem,
+                    as: "items",
+                    include: [
+                        {
+                            model: Asset,
+                            as: "asset",   // 🔥 THIS IS THE FIX
+                            attributes: ["asset_name", "units", "make"],
+                        },
+                    ],
+                },
+            ],
+            transaction,
+        });
 
         await sendGraphMail({
             to: fullRequest.approvedBy?.email,
