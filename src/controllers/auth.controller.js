@@ -5,7 +5,7 @@ import User from "../models/User.model.js";
 import { generatePassword } from "../utils/generatePassword.js";
 import { forgotPasswordMail } from "../utils/forgotPassword.js";
 // import { sendEmail } from "../config/mailer.js";
-
+import { sendGraphMail } from "../config/mailer.js";
 
 
 //FOR USER LOGIN
@@ -97,44 +97,111 @@ export const forgotPassword = async (req, res) => {
             passwordUpdatedAt: new Date(),
         });
 
-        // 4️⃣ Send mail
-        const mail = forgotPasswordMail(user.fullName, plainPassword);
 
-        const htmlContent = `
-<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;">
-  <div style="background-color: #004aad; color: white; padding: 20px; text-align: center;">
-    <h1 style="margin: 0; font-size: 24px;">KDM Engineers Group</h1>
-  </div>
-  <div style="padding: 30px; text-align: center;">
-    <h2 style="color: #333;">Password Reset Request</h2>
-    <p style="color: #555; font-size: 16px;">Hello <strong>${user.fullName}</strong>,</p>
-    <p style="color: #555; font-size: 16px;">You recently requested to reset your password. Use the new password below to login:</p>
-    <div style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; font-size: 18px; font-weight: bold; color: #004aad;">
-      ${plainPassword}
-    </div>
-    <p style="color: #555; font-size: 14px;">For security, we recommend you change this password after logging in.</p>
-    <a href="https://inventory.kdmengineers.com/" style="display: inline-block; margin-top: 20px; padding: 10px 25px; background-color: #004aad; color: white; text-decoration: none; border-radius: 5px;">Login Now</a>
-  </div>
-  <div style="background-color: #f5f5f5; color: #777; padding: 15px; text-align: center; font-size: 12px;">
-    &copy; 2026 KDM Engineers. All rights reserved.
-  </div>
+        // 4️⃣ Send Microsoft Graph Mail
+        await sendGraphMail({
+            to: user.email,
+            subject: `🔐 Password Reset | KDM Engineers Inventory System`,
+            html: `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Password Reset</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+<tr>
+<td align="center">
+
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<!-- Header -->
+<tr>
+<td style="background-color:#eff6ff;padding:30px;">
+<h1 style="color:#1e3a8a;margin:0;font-size:22px;letter-spacing:0.5px;">
+🔐 Password Reset Successful
+</h1>
+<p style="color:#2563eb;margin:8px 0 0 0;font-size:14px;">
+KDM Engineers Inventory Management System
+</p>
+</td>
+</tr>
+
+<!-- Body -->
+<tr>
+<td style="padding:30px;color:#374151;font-size:14px;line-height:1.6;">
+<p>Hello <strong>${user.fullName}</strong>,</p>
+
+<p>
+A password reset request was initiated for your account. 
+Your new temporary password is provided below.
+</p>
+
+<div style="
+margin:20px 0;
+padding:18px;
+background:#f3f4f6;
+border-radius:8px;
+text-align:center;
+font-size:18px;
+font-weight:700;
+color:#111827;
+letter-spacing:1px;
+">
+${plainPassword}
 </div>
-`;
 
+<p>
+For security reasons, you will be required to change this password 
+immediately after logging in.
+</p>
 
-        // await transporter.sendMail({
-        //     from: `"KDM Engineers" <${process.env.MAIL_USER}>`,
-        //     to: user.email,
-        //     subject: mail.subject,
-        //     text: mail.text,
-        // });
+<p style="color:#6b7280;font-size:13px;">
+If you did not request this change, please contact your system administrator immediately.
+</p>
+</td>
+</tr>
 
+<!-- CTA -->
+<tr>
+<td align="center" style="padding:30px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:14px 28px;
+background:#2563eb;
+color:#ffffff;
+text-decoration:none;
+border-radius:8px;
+font-weight:600;
+font-size:14px;
+box-shadow:0 6px 16px rgba(37,99,235,0.4);
+">
+Login to Inventory System
+</a>
+</td>
+</tr>
 
-        // await sendEmail({
-        //     to: user.email,
-        //     subject: "Reset Your Password - KDM Engineers",
-        //     html: htmlContent,
-        // });
+<!-- Footer -->
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
+This is an automated security notification from KDM Engineers Group.<br/>
+© ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`
+        });
 
 
         return res.status(200).json({

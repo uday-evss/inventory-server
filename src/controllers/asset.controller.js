@@ -9,6 +9,9 @@ import { sendGraphMail } from "../config/mailer.js";
 const { Asset, AssetDocument, AssetRequest, AssetRequestItem, User, AssetRequestItemImage, SiteData, AssetReturnRequest, AssetReturnItem, AssetReturnImage } = db;
 import { v4 as uuid } from "uuid";
 
+import { Client } from "@microsoft/microsoft-graph-client";
+import "isomorphic-fetch";
+
 import { requestDecisionTemplates } from "../utils/assetReqDecision.js";
 // import { transporter } from "../config/mailer.js";
 import { sendWhatsappMessage } from "../utils/sendWhatsapp.js";
@@ -448,9 +451,27 @@ export const createAssetRequest = async (req, res) => {
         // console.log(fullRequest.items, 'items')
 
         const priorityEmoji = fullRequest.priority_level === "HIGH" ? "🔴" : fullRequest.priority_level === "MEDIUM" ? "🟡" : "🟢";
+
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id: companyId,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+        });
+
+        const ccEmails = inventoryManagers
+            .map(user => user.email)
+            .filter(email => !!email);
+
+        const ccRecipients = ccEmails.map(email => ({
+            emailAddress: { address: email }
+        }));
+
         // 📧 Send approval email via Microsoft Graph
         await sendGraphMail({
             to: fullRequest.approvedBy?.email,
+            ccRecipients,
             subject: `${priorityEmoji} New Asset Request | ${fullRequest.site?.location} | ${fullRequest.priority_level} Priority | Approval Required`,
             html: `
 <!DOCTYPE html>
@@ -752,6 +773,26 @@ export const decideAssetRequest = async (req, res) => {
         const { reqId } = req.params;
         const { decision, adminAdvice } = req.body;
 
+        // const request = await AssetRequest.findOne({
+        //     where: {
+        //         req_id: reqId,
+        //         company_id: companyId,
+        //     },
+        //     include: [
+        //         {
+        //             model: AssetRequestItem,
+        //             as: "items",
+        //             where: { company_id: companyId },
+        //         },
+        //         {
+        //             model: User,
+        //             as: "requestedBy",
+        //         },
+        //     ],
+        //     transaction: t,
+        //     lock: t.LOCK.UPDATE,
+        // });
+
         const request = await AssetRequest.findOne({
             where: {
                 req_id: reqId,
@@ -762,10 +803,22 @@ export const decideAssetRequest = async (req, res) => {
                     model: AssetRequestItem,
                     as: "items",
                     where: { company_id: companyId },
+                    include: [
+                        {
+                            model: Asset,
+                            as: "asset", // MUST match association exactly
+                            attributes: ["asset_name", "units", "make"],
+                        },
+                    ],
                 },
                 {
                     model: User,
                     as: "requestedBy",
+                    attributes: ["fullName", "email"],
+                },
+                {
+                    model: SiteData,
+                    as: "site", // MUST match association exactly
                 },
             ],
             transaction: t,
@@ -808,6 +861,141 @@ export const decideAssetRequest = async (req, res) => {
         );
 
         await t.commit();
+
+        /* ================= SEND EMAIL ================= */
+
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id: companyId,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+        });
+
+        const ccEmails = inventoryManagers
+            .map(user => user.email)
+            .filter(email => !!email); // remove null/undefined
+
+        const ccRecipients = ccEmails.map(email => ({
+            emailAddress: { address: email }
+        }));
+
+        const subject =
+            decision === "APPROVED"
+                ? `✅ Request Approved | ${request.site?.location}`
+                : `❌ Request Rejected | ${request.site?.location}`;
+
+        const data = request.toJSON();
+        const siteName = data.site?.location ?? "N/A";
+
+
+        await sendGraphMail({
+            to: request.requestedBy?.email,
+            ccRecipients,
+            subject,
+            html: `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+<tr>
+<td align="center">
+
+<table width="600" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;
+box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:30px;
+background:${decision === "APPROVED" ? "#ecfdf5" : "#fef2f2"};">
+<h2 style="margin:0;
+color:${decision === "APPROVED" ? "#065f46" : "#991b1b"};">
+${decision === "APPROVED" ? "✅ Request Approved" : "❌ Request Rejected"}
+</h2>
+<p style="margin-top:6px;font-size:13px;">
+Inventory Management System
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:30px;color:#374151;font-size:14px;">
+<p>Hello <strong>${request.requestedBy?.fullName}</strong>,</p>
+
+<p>
+Your asset request for site 
+<strong>${siteName}</strong>
+has been <strong>${decision}</strong>.
+</p>
+
+${decision === "REJECTED" && adminAdvice
+                    ? `
+<div style="margin:20px 0;padding:15px;background:#f3f4f6;border-radius:8px;">
+<strong>Admin Remarks:</strong><br/>
+${adminAdvice}
+</div>
+`
+                    : ""
+                }
+
+<h3 style="margin-top:25px;">Requested Items</h3>
+
+<table width="100%" cellpadding="8" cellspacing="0" 
+style="border-collapse:collapse;font-size:13px;">
+<tr style="background:#f3f4f6;font-weight:600;">
+<td>Asset</td>
+<td align="center">Qty</td>
+</tr>
+
+${request.items.map(item => `
+<tr style="border-bottom:1px solid #e5e7eb;">
+<td>${item.asset?.asset_name}</td>
+<td align="center">${item.requested_qty}</td>
+</tr>
+`).join("")}
+
+</table>
+
+<p style="margin-top:20px;">
+Priority Level: <strong>${request.priority_level}</strong>
+</p>
+
+</td>
+</tr>
+
+<tr>
+<td align="center" style="padding:30px;">
+<a href="https://inventory.kdmengineers.com"
+style="display:inline-block;
+padding:14px 28px;
+background:${decision === "APPROVED" ? "#16a34a" : "#dc2626"};
+color:#ffffff;
+text-decoration:none;
+border-radius:8px;
+font-weight:600;">
+View Request
+</a>
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;
+font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group.
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`
+        });
+
         res.json({ success: true });
     } catch (err) {
         await t.rollback();
@@ -1028,8 +1216,24 @@ export const allocateAssetRequest = async (req, res) => {
             transaction,
         });
 
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id: companyId,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+        });
+
+        const ccEmails = inventoryManagers
+            .map(user => user.email)
+            .filter(email => !!email); // remove null/undefined
+
+        const ccRecipients = ccEmails.map(email => ({
+            emailAddress: { address: email }
+        }));
+
         await sendGraphMail({
-            to: fullRequest.approvedBy?.email,
+            to: fullRequest.approvedBy?.email, ccRecipients,
             subject: `✅ Assets Allocated | ${fullRequest.site?.location} | Request ID ${fullRequest.req_id}`,
             html: `
 <!DOCTYPE html>

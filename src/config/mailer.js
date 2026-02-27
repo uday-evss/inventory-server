@@ -49,13 +49,32 @@ const msalConfig = {
 
 const cca = new ConfidentialClientApplication(msalConfig);
 
-export const sendGraphMail = async ({ to, subject, html }) => {
+export const sendGraphMail = async ({
+    to,
+    ccRecipients = [],
+    subject,
+    html,
+}) => {
     try {
         const tokenResponse = await cca.acquireTokenByClientCredential({
             scopes: ["https://graph.microsoft.com/.default"],
         });
 
         const accessToken = tokenResponse.accessToken;
+
+        // Ensure TO is always array
+        const toArray = Array.isArray(to) ? to : [to];
+
+        const toFormatted = toArray.map(email => ({
+            emailAddress: { address: email },
+        }));
+
+        // Auto-convert plain emails to Graph format
+        const ccFormatted = ccRecipients.map(email =>
+            typeof email === "string"
+                ? { emailAddress: { address: email } }
+                : email
+        );
 
         await axios.post(
             `https://graph.microsoft.com/v1.0/users/info@kdmengineers.com/sendMail`,
@@ -66,15 +85,10 @@ export const sendGraphMail = async ({ to, subject, html }) => {
                         contentType: "HTML",
                         content: html,
                     },
-                    toRecipients: [
-                        {
-                            emailAddress: {
-                                address: to,
-                            },
-                        },
-                    ],
+                    toRecipients: toFormatted,
+                    ccRecipients: ccFormatted, // ✅ THIS IS THE FIX
                 },
-                saveToSentItems: "true",
+                saveToSentItems: true,
             },
             {
                 headers: {
@@ -83,7 +97,10 @@ export const sendGraphMail = async ({ to, subject, html }) => {
                 },
             }
         );
+
+        console.log("✅ Email sent successfully");
     } catch (err) {
-        console.error("Graph Mail Error:", err.response?.data || err.message);
+        console.error("❌ Graph Mail Error:", err.response?.data || err.message);
+        throw err;
     }
 };
