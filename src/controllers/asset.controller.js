@@ -236,7 +236,7 @@ export const updateAsset = async (req, res, next) => {
         const companyId = req.user.company_id;
         const assetId = req.params.id;
 
-        console.log(assetId, 'assetId')
+        // console.log(assetId, 'assetId')
 
         const asset = await Asset.findOne({
             where: {
@@ -385,7 +385,8 @@ export const createAssetRequest = async (req, res) => {
             site_id,
             priority_level,
             request_remarks,
-            items,
+            items,  asset_origin,
+  origin_site_id
         } = req.body;
 
         const companyId = req.user.company_id;
@@ -397,21 +398,29 @@ export const createAssetRequest = async (req, res) => {
                 site_id,
                 priority_level,
                 request_remarks, allocated: 0,
-                company_id: companyId,
+                company_id: companyId,  asset_origin,
+  origin_site_id
             },
             { transaction }
         );
 
         // 2️⃣ Create request items
 
-        const requestItems = items.map(item => ({
-            req_id: assetRequest.req_id,
-            asset_id: item.asset_id,
-            requested_qty: item.requested_qty,
-            spare_item: item.spare_item ?? false, // ✅ NEW
-            company_id: companyId,
-        }));
+        // const requestItems = items.map(item => ({
+        //     req_id: assetRequest.req_id,
+        //     asset_id: item.asset_id,
+        //     requested_qty: item.requested_qty,
+        //     spare_item: item.spare_item ?? false, // ✅ NEW
+        //     company_id: companyId,
+        // }));
 
+        const requestItems = items.map(item => ({
+    req_id: assetRequest.req_id,
+    asset_id: item.asset_id,
+    requested_qty: item.requested_qty,
+    spare_item: asset_origin === "SITE" ? false : (item.spare_item ?? false),
+    company_id: companyId,
+}));
 
         await AssetRequestItem.bulkCreate(requestItems, { transaction });
 
@@ -569,13 +578,40 @@ Requested Items
 <td align="left">Asset Name</td>
 <td align="center">Qty</td>
 </tr>
-${fullRequest.items.map(item => `
+
+${fullRequest.items.map(item => {
+                const isSpare = item.spare_item;
+
+                const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+                const badgeColor = isSpare ? "#92400e" : "#075985";
+                const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+                return `
 <tr style="border-bottom:1px solid #e5e7eb;">
-<td>${item.asset?.asset_name || "N/A"}</td>
-<td align="center">${item.requested_qty}</td>
+<td style="vertical-align:middle;">
+  <span style="font-weight:600;color:#111827;">
+    ${item.asset?.asset_name || "N/A"}
+  </span>
+  <span style="
+    display:inline-block;
+    margin-left:8px;
+    padding:3px 8px;
+    font-size:10px;
+    font-weight:600;
+    border-radius:50px;
+    background:${badgeBg};
+    color:${badgeColor};
+  ">
+    ${label}
+  </span>
+</td>
+<td align="center" style="vertical-align:middle;">
+  ${item.requested_qty}
+</td>
 </tr>
-`).join("")
-                }
+`;
+            }).join("")}
+
 </table>
 </td>
 </tr>
@@ -756,6 +792,8 @@ export const getRequestsForAdmin = async (req, res, next) => {
             ],
         });
 
+        // console.log(requests,'requests')
+
         res.json(requests);
     } catch (err) {
         next(err);
@@ -764,6 +802,338 @@ export const getRequestsForAdmin = async (req, res, next) => {
 
 
 //UPDATE ASSET REQUEST STATUS BY ADMIN
+// export const decideAssetRequest = async (req, res) => {
+//     const t = await sequelize.transaction();
+
+//     try {
+//         const companyId = req.user.company_id;
+//         const adminId = req.user.id;
+//         const { reqId } = req.params;
+//         const { decision, adminAdvice } = req.body;
+
+//         const request = await AssetRequest.findOne({
+//             where: {
+//                 req_id: reqId,
+//                 company_id: companyId,
+//             },
+//             include: [
+//                 {
+//                     model: AssetRequestItem,
+//                     as: "items",
+//                     where: { company_id: companyId },
+//                     include: [
+//                         {
+//                             model: Asset,
+//                             as: "asset", // MUST match association exactly
+//                             attributes: ["asset_name", "units", "make"],
+//                         },
+//                     ],
+//                 },
+//                 {
+//                     model: User,
+//                     as: "requestedBy",
+//                     attributes: ["fullName", "email"],
+//                 },
+//                 {
+//                     model: SiteData,
+//                     as: "site", // MUST match association exactly
+//                 },
+//             ],
+//             transaction: t,
+//             lock: t.LOCK.UPDATE,
+//         });
+
+//         if (!request || request.admin_approval !== "PENDING") {
+//             throw new Error("Invalid or already processed request");
+//         }
+
+//         // if (decision === "APPROVED") {
+//         //     for (const item of request.items) {
+//         //         const asset = await Asset.findOne({
+//         //             where: {
+//         //                 asset_id: item.asset_id,
+//         //                 company_id: companyId,
+//         //             },
+//         //             transaction: t,
+//         //             lock: t.LOCK.UPDATE,
+//         //         });
+
+//         //         if (!asset || asset.qty < item.requested_qty) {
+//         //             throw new Error(
+//         //                 `Insufficient stock for ${asset?.asset_name ?? "Asset"}`
+//         //             );
+//         //         }
+
+//         //         asset.qty -= item.requested_qty;
+//         //         await asset.save({ transaction: t });
+//         //     }
+//         // }
+
+//         // console.log(request.asset_origin,'request.asset_origin')
+
+//         if (decision === "APPROVED") {
+
+//     for (const item of request.items) {
+// console.log(item,'item')
+//         /* ================= OFFICE INVENTORY ================= */
+
+//         if (request.asset_origin === "OFFICE") {
+
+//             const asset = await Asset.findOne({
+//                 where: {
+//                     asset_id: item.asset_id,
+//                     company_id: companyId,
+//                 },
+//                 transaction: t,
+//                 lock: t.LOCK.UPDATE,
+//             });
+
+//             if (!asset || asset.qty < item.requested_qty) {
+//                 throw new Error(
+//                     `Insufficient office stock for ${asset?.asset_name ?? "Asset"}`
+//                 );
+//             }
+
+//             asset.qty -= item.requested_qty;
+//             await asset.save({ transaction: t });
+//         }
+
+//         /* ================= SITE INVENTORY ================= */
+
+//        if (request.asset_origin === "SITE") {
+
+//     const originSite = request.origin_site_id;
+
+//     // find approved request items that supplied this site
+//     const siteStockItems = await AssetRequestItem.findAll({
+//         include: [
+//             {
+//                 model: AssetRequest,
+//                 as: "request",
+//                 where: {
+//                     site_id: originSite,
+//                     admin_approval: "APPROVED",
+//                 },
+//                 attributes: [],
+//             },
+//         ],
+//         where: {
+//             asset_id: item.asset_id,
+//             company_id: companyId,
+//         },
+//         transaction: t,
+//         lock: t.LOCK.UPDATE,
+//     });
+
+//     // console.log(siteStockItems,'siteStockItems787')
+
+//     const totalAvailable = siteStockItems.reduce(
+//         (sum, r) => sum + r.requested_qty,
+//         0
+//     );
+
+//     if (totalAvailable < item.requested_qty) {
+//         throw new Error(`Insufficient stock at origin site`);
+//     }
+
+//     let remaining = item.requested_qty;
+
+//     for (const stockItem of siteStockItems) {
+//         if (remaining <= 0) break;
+
+//         const deduct = Math.min(stockItem.requested_qty, remaining);
+
+//         stockItem.requested_qty -= deduct;
+//         await stockItem.save({ transaction: t });
+
+//         remaining -= deduct;
+//     }
+
+    
+// }
+
+//     }
+// }
+
+//         await request.update(
+//             {
+//                 admin_approval: decision,
+//                 admin_user_id: adminId,
+//                 admin_advice: adminAdvice ?? null,
+//             },
+//             { transaction: t }
+//         );
+
+//         await t.commit();
+
+//         /* ================= SEND EMAIL ================= */
+
+//         const inventoryManagers = await User.findAll({
+//             where: {
+//                 company_id: companyId,
+//                 role: "INVENTORY_MANAGER",
+//             },
+//             attributes: ["email"],
+//         });
+
+//         const ccEmails = inventoryManagers
+//             .map(user => user.email)
+//             .filter(email => !!email); // remove null/undefined
+
+//         const ccRecipients = ccEmails.map(email => ({
+//             emailAddress: { address: email }
+//         }));
+
+//         const subject =
+//             decision === "APPROVED"
+//                 ? `✅ Request Approved | ${request.site?.location}`
+//                 : `❌ Request Rejected | ${request.site?.location}`;
+
+//         const data = request.toJSON();
+//         const siteName = data.site?.location ?? "N/A";
+
+
+//         await sendGraphMail({
+//             to: request.requestedBy?.email,
+//             ccRecipients,
+//             subject,
+//             html: `
+// <!DOCTYPE html>
+// <html>
+// <body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial;">
+
+// <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+// <tr>
+// <td align="center">
+
+// <table width="600" cellpadding="0" cellspacing="0"
+// style="background:#ffffff;border-radius:12px;overflow:hidden;
+// box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+// <tr>
+// <td style="padding:30px;
+// background:${decision === "APPROVED" ? "#ecfdf5" : "#fef2f2"};">
+// <h2 style="margin:0;
+// color:${decision === "APPROVED" ? "#065f46" : "#991b1b"};">
+// ${decision === "APPROVED" ? "✅ Request Approved" : "❌ Request Rejected"}
+// </h2>
+// <p style="margin-top:6px;font-size:13px;">
+// Inventory Management System
+// </p>
+// </td>
+// </tr>
+
+// <tr>
+// <td style="padding:30px;color:#374151;font-size:14px;">
+// <p>Hello <strong>${request.requestedBy?.fullName}</strong>,</p>
+
+// <p>
+// Your asset request for site 
+// <strong>${siteName}</strong>
+// has been <strong>${decision}</strong>.
+// </p>
+
+// ${decision === "REJECTED" && adminAdvice
+//                     ? `
+// <div style="margin:20px 0;padding:15px;background:#f3f4f6;border-radius:8px;">
+// <strong>Admin Remarks:</strong><br/>
+// ${adminAdvice}
+// </div>
+// `
+//                     : ""
+//                 }
+
+// <h3 style="margin-top:25px;">Requested Items</h3>
+
+// <table width="100%" cellpadding="8" cellspacing="0" 
+// style="border-collapse:collapse;font-size:13px;">
+// <tr style="background:#f3f4f6;font-weight:600;">
+// <td>Asset</td>
+// <td align="center">Qty</td>
+// </tr>
+
+// ${request.items.map(item => {
+//                     const isSpare = item.spare_item;
+
+//                     const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+//                     const badgeColor = isSpare ? "#92400e" : "#075985";
+//                     const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+//                     return `
+// <tr style="border-bottom:1px solid #e5e7eb;">
+// <td style="vertical-align:middle;">
+//   <span style="font-weight:600;color:#111827;">
+//     ${item.asset?.asset_name || "N/A"}
+//   </span>
+//   <span style="
+//     display:inline-block;
+//     margin-left:8px;
+//     padding:3px 8px;
+//     font-size:10px;
+//     font-weight:600;
+//     border-radius:50px;
+//     background:${badgeBg};
+//     color:${badgeColor};
+//   ">
+//     ${label}
+//   </span>
+// </td>
+// <td align="center" style="vertical-align:middle;">
+//   ${item.requested_qty}
+// </td>
+// </tr>
+// `;
+//                 }).join("")}
+
+// </table>
+
+// <p style="margin-top:20px;">
+// Priority Level: <strong>${request.priority_level}</strong>
+// </p>
+
+// </td>
+// </tr>
+
+// <tr>
+// <td align="center" style="padding:30px;">
+// <a href="https://inventory.kdmengineers.com"
+// style="display:inline-block;
+// padding:14px 28px;
+// background:${decision === "APPROVED" ? "#16a34a" : "#dc2626"};
+// color:#ffffff;
+// text-decoration:none;
+// border-radius:8px;
+// font-weight:600;">
+// View Request
+// </a>
+// </td>
+// </tr>
+
+// <tr>
+// <td style="background:#f9fafb;padding:20px;text-align:center;
+// font-size:12px;color:#6b7280;">
+// © ${new Date().getFullYear()} KDM Engineers Group.
+// </td>
+// </tr>
+
+// </table>
+// </td>
+// </tr>
+// </table>
+
+// </body>
+// </html>
+// `
+//         });
+
+//         res.json({ success: true });
+//     } catch (err) {
+//         await t.rollback();
+//         res.status(400).json({ message: err.message });
+//     }
+// };
+
+
 export const decideAssetRequest = async (req, res) => {
     const t = await sequelize.transaction();
 
@@ -772,26 +1142,6 @@ export const decideAssetRequest = async (req, res) => {
         const adminId = req.user.id;
         const { reqId } = req.params;
         const { decision, adminAdvice } = req.body;
-
-        // const request = await AssetRequest.findOne({
-        //     where: {
-        //         req_id: reqId,
-        //         company_id: companyId,
-        //     },
-        //     include: [
-        //         {
-        //             model: AssetRequestItem,
-        //             as: "items",
-        //             where: { company_id: companyId },
-        //         },
-        //         {
-        //             model: User,
-        //             as: "requestedBy",
-        //         },
-        //     ],
-        //     transaction: t,
-        //     lock: t.LOCK.UPDATE,
-        // });
 
         const request = await AssetRequest.findOne({
             where: {
@@ -806,7 +1156,7 @@ export const decideAssetRequest = async (req, res) => {
                     include: [
                         {
                             model: Asset,
-                            as: "asset", // MUST match association exactly
+                            as: "asset",
                             attributes: ["asset_name", "units", "make"],
                         },
                     ],
@@ -818,7 +1168,7 @@ export const decideAssetRequest = async (req, res) => {
                 },
                 {
                     model: SiteData,
-                    as: "site", // MUST match association exactly
+                    as: "site",
                 },
             ],
             transaction: t,
@@ -829,28 +1179,88 @@ export const decideAssetRequest = async (req, res) => {
             throw new Error("Invalid or already processed request");
         }
 
+        /* ================= APPROVAL LOGIC ================= */
+
         if (decision === "APPROVED") {
-            for (const item of request.items) {
-                const asset = await Asset.findOne({
+
+            /* ================= OFFICE INVENTORY ================= */
+
+            if (request.asset_origin === "OFFICE") {
+
+                for (const item of request.items) {
+
+                    const asset = await Asset.findOne({
+                        where: {
+                            asset_id: item.asset_id,
+                            company_id: companyId,
+                        },
+                        transaction: t,
+                        lock: t.LOCK.UPDATE,
+                    });
+
+                    if (!asset || asset.qty < item.requested_qty) {
+                        throw new Error(
+                            `Insufficient office stock for ${asset?.asset_name ?? "Asset"}`
+                        );
+                    }
+
+                    asset.qty -= item.requested_qty;
+                    await asset.save({ transaction: t });
+                }
+            }
+
+            /* ================= SITE INVENTORY ================= */
+
+            if (request.asset_origin === "SITE") {
+
+                const originSiteId = request.origin_site_id;
+console.log(originSiteId,decision,companyId,'sfnskfjbksfv78899')
+
+                const originRequest = await AssetRequest.findOne({
                     where: {
-                        asset_id: item.asset_id,
+                        site_id: originSiteId,
+                        admin_approval: decision,
+                        company_id: companyId,
+                    },
+                    // order: [["createdAt", "DESC"]],
+                    transaction: t,
+                    lock: t.LOCK.UPDATE,
+                });
+
+                console.log(originSiteId,originRequest,'sfnskfjbksfv78899')
+
+
+                if (!originRequest) {
+                    throw new Error("Origin site inventory not found");
+                }
+
+                const originItems = await AssetRequestItem.findAll({
+                    where: {
+                        req_id: originRequest.req_id,
                         company_id: companyId,
                     },
                     transaction: t,
                     lock: t.LOCK.UPDATE,
                 });
 
-                if (!asset || asset.qty < item.requested_qty) {
-                    throw new Error(
-                        `Insufficient stock for ${asset?.asset_name ?? "Asset"}`
-                    );
-                }
+                for (const item of request.items) {
 
-                asset.qty -= item.requested_qty;
-                await asset.save({ transaction: t });
+                    const originItem = originItems.find(
+                        (i) => i.asset_id === item.asset_id
+                    );
+
+                    if (!originItem || originItem.requested_qty < item.requested_qty) {
+                        throw new Error(`Insufficient site stock for asset ${item.asset_id}`);
+                    }
+
+                    originItem.requested_qty -= item.requested_qty;
+
+                    await originItem.save({ transaction: t });
+                }
             }
         }
 
+        /* ================= UPDATE REQUEST STATUS ================= */
         await request.update(
             {
                 admin_approval: decision,
@@ -872,13 +1282,12 @@ export const decideAssetRequest = async (req, res) => {
             attributes: ["email"],
         });
 
-        const ccEmails = inventoryManagers
+        const ccRecipients = inventoryManagers
             .map(user => user.email)
-            .filter(email => !!email); // remove null/undefined
-
-        const ccRecipients = ccEmails.map(email => ({
-            emailAddress: { address: email }
-        }));
+            .filter(Boolean)
+            .map(email => ({
+                emailAddress: { address: email }
+            }));
 
         const subject =
             decision === "APPROVED"
@@ -888,115 +1297,144 @@ export const decideAssetRequest = async (req, res) => {
         const data = request.toJSON();
         const siteName = data.site?.location ?? "N/A";
 
-
         await sendGraphMail({
             to: request.requestedBy?.email,
             ccRecipients,
             subject,
-            html: `
-<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial;">
-
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
-<tr>
-<td align="center">
-
-<table width="600" cellpadding="0" cellspacing="0"
-style="background:#ffffff;border-radius:12px;overflow:hidden;
-box-shadow:0 8px 30px rgba(0,0,0,0.08);">
-
-<tr>
-<td style="padding:30px;
-background:${decision === "APPROVED" ? "#ecfdf5" : "#fef2f2"};">
-<h2 style="margin:0;
-color:${decision === "APPROVED" ? "#065f46" : "#991b1b"};">
-${decision === "APPROVED" ? "✅ Request Approved" : "❌ Request Rejected"}
-</h2>
-<p style="margin-top:6px;font-size:13px;">
-Inventory Management System
-</p>
-</td>
-</tr>
-
-<tr>
-<td style="padding:30px;color:#374151;font-size:14px;">
-<p>Hello <strong>${request.requestedBy?.fullName}</strong>,</p>
-
-<p>
-Your asset request for site 
-<strong>${siteName}</strong>
-has been <strong>${decision}</strong>.
-</p>
-
-${decision === "REJECTED" && adminAdvice
-                    ? `
-<div style="margin:20px 0;padding:15px;background:#f3f4f6;border-radius:8px;">
-<strong>Admin Remarks:</strong><br/>
-${adminAdvice}
-</div>
+            html: 
+            
 `
-                    : ""
-                }
+ <!DOCTYPE html>
+ <html>
+ <body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial;">
 
-<h3 style="margin-top:25px;">Requested Items</h3>
+ <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+ <tr>
+ <td align="center">
 
-<table width="100%" cellpadding="8" cellspacing="0" 
-style="border-collapse:collapse;font-size:13px;">
-<tr style="background:#f3f4f6;font-weight:600;">
-<td>Asset</td>
-<td align="center">Qty</td>
-</tr>
+ <table width="600" cellpadding="0" cellspacing="0"
+ style="background:#ffffff;border-radius:12px;overflow:hidden;
+ box-shadow:0 8px 30px rgba(0,0,0,0.08);">
 
-${request.items.map(item => `
-<tr style="border-bottom:1px solid #e5e7eb;">
-<td>${item.asset?.asset_name}</td>
-<td align="center">${item.requested_qty}</td>
-</tr>
-`).join("")}
+ <tr>
+ <td style="padding:30px;
+ background:${decision === "APPROVED" ? "#ecfdf5" : "#fef2f2"};">
+ <h2 style="margin:0;
+ color:${decision === "APPROVED" ? "#065f46" : "#991b1b"};">
+ ${decision === "APPROVED" ? "✅ Request Approved" : "❌ Request Rejected"}
+ </h2>
+ <p style="margin-top:6px;font-size:13px;">
+ Inventory Management System
+ </p>
+ </td>
+ </tr>
 
-</table>
+ <tr>
+ <td style="padding:30px;color:#374151;font-size:14px;">
+ <p>Hello <strong>${request.requestedBy?.fullName}</strong>,</p>
 
-<p style="margin-top:20px;">
-Priority Level: <strong>${request.priority_level}</strong>
-</p>
+ <p>
+ Your asset request for site 
+ <strong>${siteName}</strong>
+ has been <strong>${decision}</strong>.
+ </p>
 
-</td>
-</tr>
+ ${decision === "REJECTED" && adminAdvice
+                     ? `
+ <div style="margin:20px 0;padding:15px;background:#f3f4f6;border-radius:8px;">
+ <strong>Admin Remarks:</strong><br/>
+ ${adminAdvice}
+ </div>
+ `
+                     : ""
+                 }
 
-<tr>
-<td align="center" style="padding:30px;">
-<a href="https://inventory.kdmengineers.com"
-style="display:inline-block;
-padding:14px 28px;
-background:${decision === "APPROVED" ? "#16a34a" : "#dc2626"};
-color:#ffffff;
-text-decoration:none;
-border-radius:8px;
-font-weight:600;">
-View Request
-</a>
-</td>
-</tr>
+ <h3 style="margin-top:25px;">Requested Items</h3>
 
-<tr>
-<td style="background:#f9fafb;padding:20px;text-align:center;
-font-size:12px;color:#6b7280;">
-© ${new Date().getFullYear()} KDM Engineers Group.
-</td>
-</tr>
+ <table width="100%" cellpadding="8" cellspacing="0" 
+ style="border-collapse:collapse;font-size:13px;">
+ <tr style="background:#f3f4f6;font-weight:600;">
+ <td>Asset</td>
+ <td align="center">Qty</td>
+ </tr>
 
-</table>
-</td>
-</tr>
-</table>
+ ${request.items.map(item => {
+                     const isSpare = item.spare_item;
 
-</body>
-</html>
-`
+                     const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+                     const badgeColor = isSpare ? "#92400e" : "#075985";
+                     const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+                     return `
+ <tr style="border-bottom:1px solid #e5e7eb;">
+ <td style="vertical-align:middle;">
+   <span style="font-weight:600;color:#111827;">
+     ${item.asset?.asset_name || "N/A"}
+   </span>
+   <span style="
+     display:inline-block;
+     margin-left:8px;
+     padding:3px 8px;
+     font-size:10px;
+     font-weight:600;
+     border-radius:50px;
+     background:${badgeBg};
+     color:${badgeColor};
+   ">
+     ${label}
+   </span>
+ </td>
+ <td align="center" style="vertical-align:middle;">
+   ${item.requested_qty}
+ </td>
+ </tr>
+ `;
+                 }).join("")}
+
+ </table>
+
+ <p style="margin-top:20px;">
+ Priority Level: <strong>${request.priority_level}</strong>
+ </p>
+
+ </td>
+ </tr>
+
+ <tr>
+ <td align="center" style="padding:30px;">
+ <a href="https:inventory.kdmengineers.com"
+ style="display:inline-block;
+ padding:14px 28px;
+ background:${decision === "APPROVED" ? "#16a34a" : "#dc2626"};
+ color:#ffffff;
+ text-decoration:none;
+ border-radius:8px;
+ font-weight:600;">
+ View Request
+ </a>
+ </td>
+ </tr>
+
+ <tr>
+ <td style="background:#f9fafb;padding:20px;text-align:center;
+ font-size:12px;color:#6b7280;">
+ © ${new Date().getFullYear()} KDM Engineers Group.
+ </td>
+ </tr>
+
+ </table>
+ </td>
+ </tr>
+ </table>
+
+ </body>
+ </html>
+ `
+
         });
 
         res.json({ success: true });
+
     } catch (err) {
         await t.rollback();
         res.status(400).json({ message: err.message });
@@ -1075,46 +1513,563 @@ export const getAssetRequestById = async (req, res) => {
 //MARK ASSET REQUEST AS ALLOCATED
 // export const allocateAssetRequest = async (req, res) => {
 //     const { reqId } = req.params;
+//     const companyId = req.user.company_id;
 
-//     const request = await AssetRequest.findByPk(reqId);
+//     const transaction = await sequelize.transaction();
 
-//     if (!request) {
-//         return res.status(404).json({ message: "Request not found" });
+//     try {
+//         // 1️⃣ Fetch request (company scoped)
+//         const request = await AssetRequest.findOne({
+//             where: {
+//                 req_id: reqId,
+//                 company_id: companyId,
+//             },
+//             transaction,
+//             lock: transaction.LOCK.UPDATE,
+//         });
+
+//         if (!request) {
+//             await transaction.rollback();
+//             return res.status(404).json({ message: "Request not found" });
+//         }
+
+//         if (request.admin_approval !== "APPROVED") {
+//             await transaction.rollback();
+//             return res.status(400).json({
+//                 message: "Request must be approved first",
+//             });
+//         }
+
+//         // 2️⃣ Check allocated request for same site + same company
+//         const existingAllocatedRequest = await AssetRequest.findOne({
+//             where: {
+//                 site_id: request.site_id,
+//                 allocated: 1,
+//                 company_id: companyId,
+//             },
+//             transaction,
+//             lock: transaction.LOCK.UPDATE,
+//         });
+
+//         if (existingAllocatedRequest) {
+//             // 3️⃣ Merge items
+//             await AssetRequestItem.update(
+//                 { req_id: existingAllocatedRequest.req_id },
+//                 {
+//                     where: {
+//                         req_id: request.req_id,
+//                         company_id: companyId,
+//                     },
+//                     transaction,
+//                 }
+//             );
+
+//             await AssetRequest.destroy({
+//                 where: {
+//                     req_id: request.req_id,
+//                     company_id: companyId,
+//                 },
+//                 transaction,
+//             });
+
+//             await transaction.commit();
+
+//             return res.json({
+//                 success: true,
+//                 message: "Request items merged into existing allocated request",
+//                 merged_into_req_id: existingAllocatedRequest.req_id,
+//             });
+//         }
+
+//         // 4️⃣ Allocate current request
+//         await request.update(
+//             { allocated: 1 },
+//             { transaction }
+//         );
+
+//         // After bulkCreate but BEFORE commit
+//         const fullRequest = await AssetRequest.findOne({
+//             where: { req_id: reqId },
+//             include: [
+//                 {
+//                     model: User,
+//                     as: "requestedBy",
+//                     attributes: ["id", "fullName", "email", "mobile", "role"],
+//                 },
+//                 {
+//                     model: User,
+//                     as: "approvedBy",
+//                     attributes: ["id", "fullName", "email", "mobile", "role"],
+//                 },
+//                 {
+//                     model: SiteData,
+//                     as: "site",
+//                 },
+//                 {
+//                     model: AssetRequestItem,
+//                     as: "items",
+//                     include: [
+//                         {
+//                             model: Asset,
+//                             as: "asset",   // 🔥 THIS IS THE FIX
+//                             attributes: ["asset_name", "units", "make"],
+//                         },
+//                     ],
+//                 },
+//             ],
+//             transaction,
+//         });
+
+//         const inventoryManagers = await User.findAll({
+//             where: {
+//                 company_id: companyId,
+//                 role: "INVENTORY_MANAGER",
+//             },
+//             attributes: ["email"],
+//         });
+
+//         const ccEmails = inventoryManagers
+//             .map(user => user.email)
+//             .filter(email => !!email); 
+
+//         const ccRecipients = ccEmails.map(email => ({
+//             emailAddress: { address: email }
+//         }));
+
+//         await sendGraphMail({
+//             to: fullRequest.approvedBy?.email, ccRecipients,
+//             subject: `✅ Assets Allocated | ${fullRequest.site?.location} | Request ID ${fullRequest.req_id}`,
+//             html: `
+// <!DOCTYPE html>
+// <html>
+// <head>
+// <meta charset="UTF-8" />
+// <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+// <title>Asset Allocation Confirmation</title>
+// </head>
+// <body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+
+// <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+// <tr>
+// <td align="center">
+
+// <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+// <!-- Header -->
+// <tr>
+// <td style="background-color:#ecfdf5;padding:30px;">
+// <h1 style="color:#065f46;margin:0;font-size:22px;letter-spacing:0.5px;">
+// ✅ Asset Allocation Confirmed
+// </h1>
+// <p style="color:#047857;margin:8px 0 0 0;font-size:14px;">
+// Inventory Management System
+// </p>
+// </td>
+// </tr>
+
+// <!-- Body -->
+// <tr>
+// <td style="padding:25px 30px 10px 30px;color:#374151;font-size:14px;line-height:1.6;">
+// <p>Hello <strong>${fullRequest.approvedBy?.fullName}</strong>,</p>
+
+// <p>
+// This is to inform you that the approved asset request has been successfully 
+// <strong>allocated and handed over</strong> to 
+// <strong>${fullRequest.requestedBy?.fullName}</strong> 
+// at the designated site.
+// </p>
+// </td>
+// </tr>
+
+// <!-- Summary Card -->
+// <tr>
+// <td style="padding:10px 30px;">
+// <table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;">
+// <tr>
+// <td style="font-size:13px;color:#6b7280;">Request ID</td>
+// <td align="right" style="font-weight:600;color:#111827;">${fullRequest.req_id}</td>
+// </tr>
+// <tr>
+// <td style="font-size:13px;color:#6b7280;padding-top:10px;">Site Location</td>
+// <td align="right" style="font-weight:600;padding-top:10px;">
+// ${fullRequest.site?.location} | Bridge ${fullRequest.site?.bridge_no}
+// </td>
+// </tr>
+// <tr>
+// <td style="font-size:13px;color:#6b7280;padding-top:10px;">Allocated On</td>
+// <td align="right" style="font-weight:600;padding-top:10px;">
+// ${new Date().toLocaleString()}
+// </td>
+// </tr>
+// </table>
+// </td>
+// </tr>
+
+// <!-- Items -->
+// <tr>
+// <td style="padding:20px 30px 0 30px;">
+// <h3 style="margin:0 0 10px 0;color:#111827;font-size:16px;">
+// Allocated Items
+// </h3>
+// <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+// <tr style="background:#f3f4f6;color:#374151;font-weight:600;">
+// <td align="left">Asset Name</td>
+// <td align="center">Quantity</td>
+// </tr>
+// ${fullRequest.items.map(item => {
+//                 const isSpare = item.spare_item;
+
+//                 const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+//                 const badgeColor = isSpare ? "#92400e" : "#075985";
+//                 const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+//                 return `
+// <tr style="border-bottom:1px solid #e5e7eb;">
+// <td style="vertical-align:middle;">
+//   <span style="font-weight:600;color:#111827;">
+//     ${item.asset?.asset_name || "N/A"}
+//   </span>
+//   <span style="
+//     display:inline-block;
+//     margin-left:8px;
+//     padding:3px 8px;
+//     font-size:10px;
+//     font-weight:600;
+//     border-radius:50px;
+//     background:${badgeBg};
+//     color:${badgeColor};
+//   ">
+//     ${label}
+//   </span>
+// </td>
+// <td align="center" style="vertical-align:middle;">
+//   ${item.requested_qty}
+// </td>
+// </tr>
+// `;
+//             }).join("")}
+// </table>
+// </td>
+// </tr>
+
+// <!-- Footer Message -->
+// <tr>
+// <td style="padding:25px 30px;font-size:14px;color:#374151;">
+// This serves as an official acknowledgment that the above assets 
+// have been delivered and recorded in the system.
+// </td>
+// </tr>
+
+// <!-- CTA -->
+// <tr>
+// <td align="center" style="padding:30px;">
+// <a href="https://inventory.kdmengineers.com"
+// style="
+// display:inline-block;
+// padding:14px 28px;
+// background:#16a34a;
+// color:#ffffff;
+// text-decoration:none;
+// border-radius:8px;
+// font-weight:600;
+// font-size:14px;
+// box-shadow:0 6px 16px rgba(22,163,74,0.4);
+// ">
+// View Allocation Details
+// </a>
+// </td>
+// </tr>
+
+// <!-- Footer -->
+// <tr>
+// <td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
+// This is an automated confirmation from KDM Engineers Inventory System.<br/>
+// © ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+// </td>
+// </tr>
+
+// </table>
+// </td>
+// </tr>
+// </table>
+
+// </body>
+// </html>
+// `
+//         });
+
+//         await transaction.commit();
+
+//         return res.json({
+//             success: true,
+//             message: "Request allocated successfully",
+//             req_id: request.req_id,
+//         });
+//     } catch (error) {
+//         await transaction.rollback();
+//         console.error("allocateAssetRequest error:", error);
+
+//         return res.status(500).json({
+//             message: "Failed to allocate request",
+//         });
 //     }
-
-//     if (request.admin_approval !== "APPROVED") {
-//         return res
-//             .status(400)
-//             .json({ message: "Request must be approved first" });
-//     }
-
-//     if (request.allocated) {
-//         return res
-//             .status(400)
-//             .json({ message: "Request already allocated" });
-//     }
-
-//     request.allocated = 1;
-//     await request.save();
-
-//     res.json({
-//         success: true,
-//         message: "Request allocated successfully",
-//     });
 // };
 
 export const allocateAssetRequest = async (req, res) => {
     const { reqId } = req.params;
+    const companyId = req.user.company_id
+
+    const transaction = await sequelize.transaction();
+
+    try {
+
+        // 1️⃣ Fetch request
+        const request = await AssetRequest.findOne({
+            where: {
+                req_id: reqId,
+                company_id: companyId,
+            },
+            include: [
+                {
+                    model: User,
+                    as: "requestedBy",
+                    attributes: ["id", "fullName", "email"],
+                },
+                {
+                    model: User,
+                    as: "approvedBy",
+                    attributes: ["id", "fullName", "email"],
+                },
+                {
+                    model: SiteData,
+                    as: "site",
+                },
+                {
+                    model: AssetRequestItem,
+                    as: "items",
+                    include: [
+                        {
+                            model: Asset,
+                            as: "asset",
+                            attributes: ["asset_name", "units", "make"],
+                        },
+                    ],
+                },
+            ],
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+        });
+
+        if (!request) {
+            await transaction.rollback();
+            return res.status(404).json({
+                message: "Request not found",
+            });
+        }
+
+        if (request.admin_approval !== "APPROVED") {
+            await transaction.rollback();
+            return res.status(400).json({
+                message: "Request must be approved first",
+            });
+        }
+
+        // 2️⃣ Update allocated flag
+        await request.update(
+            { allocated: 1 },
+            { transaction }
+        );
+
+        // 3️⃣ Get inventory managers for CC
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id: companyId,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+            transaction,
+        });
+
+        const ccRecipients = inventoryManagers
+            .map((u) => ({
+                emailAddress: { address: u.email },
+            }));
+
+           await sendGraphMail({
+    to: [
+    request.approvedBy?.email,
+    request.requestedBy?.email
+  ],
+    ccRecipients,
+    subject: `📦 Assets Dispatched | ${request.site?.location}`,
+    html: `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+<tr>
+<td align="center">
+
+<table width="600" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;
+box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<!-- HEADER -->
+<tr>
+<td style="padding:30px;background:#ecfdf5;">
+<h2 style="margin:0;color:#065f46;">
+📦 Assets Dispatched
+</h2>
+<p style="margin-top:6px;font-size:13px;">
+Inventory Management System
+</p>
+</td>
+</tr>
+
+<!-- BODY -->
+<tr>
+<td style="padding:30px;color:#374151;font-size:14px;">
+
+<p>Hello <strong>${request.approvedBy?.fullName}</strong>,</p>
+
+<p>
+The approved asset request has been successfully 
+<strong>dispatched</strong> to 
+<strong>${request.requestedBy?.fullName}</strong>.
+</p>
+
+<p>
+<strong>Request ID:</strong> ${request.req_id}<br/>
+<strong>Site:</strong> ${request.site?.location ?? "N/A"}<br/>
+<strong>Dispatched On:</strong> ${new Date().toLocaleString()}
+</p>
+
+<h3 style="margin-top:25px;">Dispatched Items</h3>
+
+<table width="100%" cellpadding="8" cellspacing="0" 
+style="border-collapse:collapse;font-size:13px;">
+<tr style="background:#f3f4f6;font-weight:600;">
+<td>Asset</td>
+<td align="center">Qty</td>
+</tr>
+
+${request.items.map(item => {
+
+    const isSpare = item.spare_item;
+
+    const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+    const badgeColor = isSpare ? "#92400e" : "#075985";
+    const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+    return `
+<tr style="border-bottom:1px solid #e5e7eb;">
+<td style="vertical-align:middle;">
+<span style="font-weight:600;color:#111827;">
+${item.asset?.asset_name || "N/A"}
+</span>
+
+<span style="
+display:inline-block;
+margin-left:8px;
+padding:3px 8px;
+font-size:10px;
+font-weight:600;
+border-radius:50px;
+background:${badgeBg};
+color:${badgeColor};
+">
+${label}
+</span>
+
+</td>
+
+<td align="center">
+${item.requested_qty} ${item.asset?.units ?? ""}
+</td>
+
+</tr>
+`;
+
+}).join("")}
+
+</table>
+
+</td>
+</tr>
+
+<!-- CTA -->
+<tr>
+<td align="center" style="padding:30px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:14px 28px;
+background:#16a34a;
+color:#ffffff;
+text-decoration:none;
+border-radius:8px;
+font-weight:600;">
+View Allocation
+</a>
+</td>
+</tr>
+
+<!-- FOOTER -->
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;
+font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group.
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`
+});
+
+        await transaction.commit();
+
+        return res.json({
+            success: true,
+            message: "Request allocated successfully",
+            req_id: request.req_id,
+        });
+
+    } catch (error) {
+
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
+
+        console.error("allocateAssetRequest error:", error);
+
+        return res.status(500).json({
+            message: "Failed to allocate request",
+        });
+    }
+};
+
+//MARK ASSET REQUEST AS RECEIVED
+export const markAssetsReceived = async (req, res) => {
+    const { reqId } = req.params;
+    const { remarks } = req.body;
     const companyId = req.user.company_id;
 
     const transaction = await sequelize.transaction();
 
-
-
-
-
     try {
-        // 1️⃣ Fetch request (company scoped)
+
+        /* -------------------------------------------------- */
+        /* 1️⃣ Fetch request */
+        /* -------------------------------------------------- */
+
         const request = await AssetRequest.findOne({
             where: {
                 req_id: reqId,
@@ -1126,31 +2081,63 @@ export const allocateAssetRequest = async (req, res) => {
 
         if (!request) {
             await transaction.rollback();
-            return res.status(404).json({ message: "Request not found" });
-        }
-
-        if (request.admin_approval !== "APPROVED") {
-            await transaction.rollback();
-            return res.status(400).json({
-                message: "Request must be approved first",
+            return res.status(404).json({
+                message: "Request not found",
             });
         }
 
-        // 2️⃣ Check allocated request for same site + same company
-        const existingAllocatedRequest = await AssetRequest.findOne({
+        if (request.admin_approval !== "APPROVED" || !request.allocated) {
+            await transaction.rollback();
+            return res.status(400).json({
+                message: "Assets must be dispatched before marking received",
+            });
+        }
+
+        /* -------------------------------------------------- */
+        /* 2️⃣ Fetch request items (for email BEFORE merge) */
+        /* -------------------------------------------------- */
+
+        const requestItems = await AssetRequestItem.findAll({
+            where: {
+                req_id: request.req_id,
+                company_id: companyId,
+            },
+            include: [
+                {
+                    model: Asset,
+                    as: "asset",
+                    attributes: ["asset_name", "units", "make"],
+                },
+            ],
+            transaction,
+        });
+
+        /* -------------------------------------------------- */
+        /* 3️⃣ Check if received request already exists */
+        /* -------------------------------------------------- */
+
+        const existingReceivedRequest = await AssetRequest.findOne({
             where: {
                 site_id: request.site_id,
-                allocated: 1,
+                allocated: true,
+                received_assets: true,
                 company_id: companyId,
             },
             transaction,
             lock: transaction.LOCK.UPDATE,
         });
 
-        if (existingAllocatedRequest) {
-            // 3️⃣ Merge items
+        let emailReqId = reqId;
+        let mergedIntoReqId = null;
+
+        /* -------------------------------------------------- */
+        /* 4️⃣ Merge logic */
+        /* -------------------------------------------------- */
+
+        if (existingReceivedRequest) {
+
             await AssetRequestItem.update(
-                { req_id: existingAllocatedRequest.req_id },
+                { req_id: existingReceivedRequest.req_id },
                 {
                     where: {
                         req_id: request.req_id,
@@ -1168,24 +2155,30 @@ export const allocateAssetRequest = async (req, res) => {
                 transaction,
             });
 
-            await transaction.commit();
+            mergedIntoReqId = existingReceivedRequest.req_id;
+            emailReqId = existingReceivedRequest.req_id;
 
-            return res.json({
-                success: true,
-                message: "Request items merged into existing allocated request",
-                merged_into_req_id: existingAllocatedRequest.req_id,
-            });
+        } else {
+
+            /* -------------------------------------------------- */
+            /* 5️⃣ Mark as received */
+            /* -------------------------------------------------- */
+
+            await request.update(
+                {
+                    received_assets: true,
+                    received_asset_remarks: remarks || null,
+                },
+                { transaction }
+            );
         }
 
-        // 4️⃣ Allocate current request
-        await request.update(
-            { allocated: 1 },
-            { transaction }
-        );
+        /* -------------------------------------------------- */
+        /* 6️⃣ Fetch request info for email (WITHOUT items) */
+        /* -------------------------------------------------- */
 
-        // After bulkCreate but BEFORE commit
         const fullRequest = await AssetRequest.findOne({
-            where: { req_id: reqId },
+            where: { req_id: emailReqId },
             include: [
                 {
                     model: User,
@@ -1200,21 +2193,14 @@ export const allocateAssetRequest = async (req, res) => {
                 {
                     model: SiteData,
                     as: "site",
-                },
-                {
-                    model: AssetRequestItem,
-                    as: "items",
-                    include: [
-                        {
-                            model: Asset,
-                            as: "asset",   // 🔥 THIS IS THE FIX
-                            attributes: ["asset_name", "units", "make"],
-                        },
-                    ],
-                },
+                }
             ],
             transaction,
         });
+
+        /* -------------------------------------------------- */
+        /* 7️⃣ CC Inventory Managers */
+        /* -------------------------------------------------- */
 
         const inventoryManagers = await User.findAll({
             where: {
@@ -1224,141 +2210,165 @@ export const allocateAssetRequest = async (req, res) => {
             attributes: ["email"],
         });
 
-        const ccEmails = inventoryManagers
-            .map(user => user.email)
-            .filter(email => !!email); // remove null/undefined
+        const ccRecipients = inventoryManagers
+            .filter(u => !!u.email)
+            .map(u => ({
+                emailAddress: { address: u.email }
+            }));
 
-        const ccRecipients = ccEmails.map(email => ({
-            emailAddress: { address: email }
-        }));
+        await transaction.commit();
 
-        await sendGraphMail({
-            to: fullRequest.approvedBy?.email, ccRecipients,
-            subject: `✅ Assets Allocated | ${fullRequest.site?.location} | Request ID ${fullRequest.req_id}`,
-            html: `
+        /* -------------------------------------------------- */
+        /* 8️⃣ Send email */
+        /* -------------------------------------------------- */
+
+        if (fullRequest?.approvedBy?.email) {
+
+            await sendGraphMail({
+                to: fullRequest.approvedBy.email,
+                ccRecipients,
+                subject: `📦 Assets Received | ${fullRequest.site?.location} | Request ${reqId}`,
+                html: `
 <!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Asset Allocation Confirmation</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial">
 
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+<table width="100%" style="padding:40px;background:#f4f6f9">
 <tr>
 <td align="center">
 
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+<table width="600" style="background:#fff;border-radius:12px;overflow:hidden">
 
-<!-- Header -->
 <tr>
-<td style="background-color:#ecfdf5;padding:30px;">
-<h1 style="color:#065f46;margin:0;font-size:22px;letter-spacing:0.5px;">
-✅ Asset Allocation Confirmed
-</h1>
-<p style="color:#047857;margin:8px 0 0 0;font-size:14px;">
+<td style="background:#e0f2fe;padding:30px">
+<h2 style="margin:0;color:#075985">📦 Assets Successfully Received</h2>
+<p style="margin:5px 0 0 0;color:#0369a1;font-size:14px">
 Inventory Management System
 </p>
 </td>
 </tr>
 
-<!-- Body -->
 <tr>
-<td style="padding:25px 30px 10px 30px;color:#374151;font-size:14px;line-height:1.6;">
-<p>Hello <strong>${fullRequest.approvedBy?.fullName}</strong>,</p>
+<td style="padding:25px 30px;font-size:14px;color:#374151">
+
+<p>Hello <strong>${fullRequest.requestedBy?.fullName}</strong>,</p>
 
 <p>
-This is to inform you that the approved asset request has been successfully 
-<strong>allocated and handed over</strong> to 
-<strong>${fullRequest.requestedBy?.fullName}</strong> 
-at the designated site.
+The assets dispatched for the following site have been successfully
+<strong>received and recorded</strong> in the system.
 </p>
+
 </td>
 </tr>
 
-<!-- Summary Card -->
 <tr>
-<td style="padding:10px 30px;">
-<table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;">
+<td style="padding:10px 30px">
+
+<table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;font-size:13px">
+
 <tr>
-<td style="font-size:13px;color:#6b7280;">Request ID</td>
-<td align="right" style="font-weight:600;color:#111827;">${fullRequest.req_id}</td>
+<td style="color:#6b7280">Request ID</td>
+<td align="right"><strong>${reqId}</strong></td>
 </tr>
+
 <tr>
-<td style="font-size:13px;color:#6b7280;padding-top:10px;">Site Location</td>
-<td align="right" style="font-weight:600;padding-top:10px;">
+<td style="color:#6b7280;padding-top:10px">Site</td>
+<td align="right" style="padding-top:10px">
 ${fullRequest.site?.location} | Bridge ${fullRequest.site?.bridge_no}
 </td>
 </tr>
+
 <tr>
-<td style="font-size:13px;color:#6b7280;padding-top:10px;">Allocated On</td>
-<td align="right" style="font-weight:600;padding-top:10px;">
+<td style="color:#6b7280;padding-top:10px">Received On</td>
+<td align="right" style="padding-top:10px">
 ${new Date().toLocaleString()}
 </td>
 </tr>
+
 </table>
+
 </td>
 </tr>
 
-<!-- Items -->
 <tr>
-<td style="padding:20px 30px 0 30px;">
-<h3 style="margin:0 0 10px 0;color:#111827;font-size:16px;">
-Allocated Items
-</h3>
-<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
-<tr style="background:#f3f4f6;color:#374151;font-weight:600;">
-<td align="left">Asset Name</td>
-<td align="center">Quantity</td>
+<td style="padding:20px 30px">
+
+<h3 style="margin:0 0 10px 0;font-size:16px">Received Items</h3>
+
+<table width="100%" cellpadding="8" style="font-size:13px;border-collapse:collapse">
+
+<tr style="background:#f3f4f6;font-weight:600">
+<td>Asset</td>
+<td align="center">Qty</td>
 </tr>
-${fullRequest.items.map(item => `
+
+${requestItems.map(item => {
+
+    const isSpare = item.spare_item;
+
+    const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+    const badgeColor = isSpare ? "#92400e" : "#075985";
+    const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+    return `
 <tr style="border-bottom:1px solid #e5e7eb;">
-<td>${item.asset?.asset_name || "N/A"}</td>
-<td align="center">${item.requested_qty}</td>
-</tr>
-`).join("")}
-</table>
-</td>
-</tr>
+<td>
+<span style="font-weight:600;color:#111827;">
+${item.asset?.asset_name || "N/A"}
+</span>
 
-<!-- Footer Message -->
-<tr>
-<td style="padding:25px 30px;font-size:14px;color:#374151;">
-This serves as an official acknowledgment that the above assets 
-have been delivered and recorded in the system.
-</td>
-</tr>
-
-<!-- CTA -->
-<tr>
-<td align="center" style="padding:30px;">
-<a href="https://inventory.kdmengineers.com"
-style="
+<span style="
 display:inline-block;
-padding:14px 28px;
-background:#16a34a;
-color:#ffffff;
-text-decoration:none;
-border-radius:8px;
+margin-left:8px;
+padding:3px 8px;
+font-size:10px;
 font-weight:600;
-font-size:14px;
-box-shadow:0 6px 16px rgba(22,163,74,0.4);
+border-radius:50px;
+background:${badgeBg};
+color:${badgeColor};
 ">
-View Allocation Details
-</a>
+${label}
+</span>
+</td>
+
+<td align="center">
+${item.requested_qty} ${item.asset?.units ?? ""}
+</td>
+</tr>
+`;
+
+}).join("")}
+
+</table>
+
 </td>
 </tr>
 
-<!-- Footer -->
 <tr>
-<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
-This is an automated confirmation from KDM Engineers Inventory System.<br/>
-© ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+<td style="padding:25px 30px;font-size:13px;color:#6b7280">
+Remarks: ${remarks || "None"}
+</td>
+</tr>
+
+<tr>
+<td align="center" style="padding:30px">
+
+<a href="https://inventory.kdmengineers.com"
+style="padding:14px 28px;background:#0284c7;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">
+View Details
+</a>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280">
+© ${new Date().getFullYear()} KDM Engineers Group
 </td>
 </tr>
 
 </table>
+
 </td>
 </tr>
 </table>
@@ -1366,21 +2376,27 @@ This is an automated confirmation from KDM Engineers Inventory System.<br/>
 </body>
 </html>
 `
-        });
+            });
 
-        await transaction.commit();
+        }
 
         return res.json({
             success: true,
-            message: "Request allocated successfully",
-            req_id: request.req_id,
+            message: mergedIntoReqId
+                ? "Items merged into existing received request"
+                : "Assets marked as received",
+            req_id: emailReqId,
+            merged_into_req_id: mergedIntoReqId,
         });
+
     } catch (error) {
+
         await transaction.rollback();
-        console.error("allocateAssetRequest error:", error);
+
+        console.error("markAssetsReceived error:", error);
 
         return res.status(500).json({
-            message: "Failed to allocate request",
+            message: "Failed to mark assets received",
         });
     }
 };
@@ -1395,7 +2411,7 @@ export const getAllocatedAssetRequests = async (req, res, next) => {
         const requests = await AssetRequest.findAll({
             where: {
                 admin_approval: "APPROVED",
-                allocated: 1,
+                allocated: 1,received_assets:1,
                 company_id: companyId,
             },
             order: [["requested_at", "DESC"]],
@@ -1605,6 +2621,192 @@ export const getAllocatedAssetRequestById = async (req, res, next) => {
 
 
 
+//FETCHING ASSETS DETAILS BASED ON ALL THE ACTIVE SITES FOR ASSET CLASSIFICATION 
+export const getAllocatedAssetRequestsByActiveSites = async (req, res, next) => {
+    try {
+        const companyId = req.user.company_id;
+        // console.log(companyId,'requests098')
+
+        const today = new Date();
+
+        const requests = await AssetRequest.findAll({
+    where: {
+        admin_approval: "APPROVED",
+        allocated: true,received_assets:true,
+        company_id: companyId,
+    },
+    include: [
+        {
+            model: User,
+            as: "requestedBy",
+            attributes: ["id", "fullName", "username"],
+        },
+        {
+            model: User,
+            as: "approvedBy",
+            attributes: ["id", "fullName"],
+        },
+        {
+            model: SiteData,
+            as: "site",
+            required: true,
+            where: {
+                company_id: companyId,
+                [Op.or]: [
+                    { site_last_date: null },
+                    { site_last_date: { [Op.gte]: today } },
+                ],
+            },
+            attributes: [
+                "site_id",
+                "bridge_no",
+                "location",
+                "site_division",
+                "site_last_date",
+            ],
+        },
+        {
+            model: AssetRequestItem,
+            as: "items",
+            include: [
+                {
+                    model: Asset,
+                    as: "asset",
+                    attributes: [
+                        "asset_id",
+                        "asset_name",
+                        "units",
+                        "asset_type",
+                        "asset_condition",
+                        "asset_status",
+                        "remarks",
+                        "asset_image",
+                    ],
+                },
+                {
+                    model: AssetRequestItemImage,
+                    as: "images",
+                    where: {
+                        [Op.or]: [
+                            { company_id: companyId },
+                            { company_id: null },
+                        ],
+                    },
+                    required: false,
+                    attributes: [
+                        "id",
+                        "image_url",
+                        "usage_qty",
+                        "asset_condition",
+                        "uploaded_at",
+                    ],
+                    separate: true,
+                    order: [["uploaded_at", "DESC"]],
+                },
+                {
+                    model: AssetReturnRequest,
+                    as: "returnRequests",
+                    attributes: [
+                        "return_id",
+                        "request_item_id",
+                        "status",
+                        "return_type",
+                        "receiver_remarks",
+                    ],
+                    include: [
+                        {
+                            model: SiteData,
+                            as: "fromSite",
+                            attributes: [
+                                "site_id",
+                                "bridge_no",
+                                "location",
+                            ],
+                        },
+                        {
+                            model: SiteData,
+                            as: "toSite",
+                            attributes: [
+                                "site_id",
+                                "bridge_no",
+                                "location",
+                            ],
+                        },
+                        {
+                            model: AssetReturnItem,
+                            as: "items",
+                            required: false,
+                            where: {
+                                "$items.returnRequests.status$": {
+                                    [Op.ne]: "APPROVED",
+                                },
+                            },
+                            attributes: [
+                                "id",
+                                "return_qty",
+                                "asset_id",
+                            ],
+                            include: [
+                                {
+                                    model: AssetReturnImage,
+                                    as: "images",
+                                    attributes: [
+                                        "id",
+                                        "image_url",
+                                        "stage",
+                                        "asset_condition",
+                                        "uploaded_at",
+                                    ],
+                                    separate: true,
+                                    order: [["uploaded_at", "DESC"]],
+                                },
+                                {
+                                    model: Asset,
+                                    as: "asset",
+                                    attributes: [
+                                        "asset_id",
+                                        "asset_name",
+                                        "units",
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+    order: [["requested_at", "DESC"]],
+});
+
+        if (!requests || requests.length === 0) {
+            return res.status(404).json({
+                message: "No allocated requests found for active sites",
+            });
+        }
+
+        const filteredRequests = requests.map(request => {
+    const cleanItems = request.items.filter(item => {
+        const hasApprovedReturn = item.returnRequests?.some(
+            rr => rr.status === "APPROVED"
+        );
+        return !hasApprovedReturn;
+    });
+
+    return {
+        ...request.toJSON(),
+        items: cleanItems,
+    };
+});
+
+        // console.log(requests,'requests098')
+
+        res.json(filteredRequests);
+    } catch (err) {
+        next(err);
+    }
+};
+
 
 
 //UPDATE SITE END DATE
@@ -1770,6 +2972,136 @@ export const requestSpareApproval = async (req, res) => {
             });
         }
 
+        // Fetch full details for email
+        const fullItem = await AssetRequestItem.findOne({
+            where: { id: request_item_id },
+            include: [
+                {
+                    model: Asset,
+                    as: "asset",
+                    attributes: ["asset_name", "make"],
+                },
+                {
+                    model: AssetRequest,
+                    as: "request",
+                    include: [
+                        {
+                            model: User,
+                            as: "requestedBy",
+                            attributes: ["fullName", "email"],
+                        },
+                        {
+                            model: User,
+                            as: "approvedBy",
+                            attributes: ["fullName", "email"],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+        });
+
+        const ccEmails = [
+            fullItem.request?.requestedBy?.email,
+            ...inventoryManagers.map(u => u.email),
+        ].filter(Boolean);
+
+        const adminEmail = fullItem.request?.approvedBy?.email;
+
+        if (adminEmail) {
+            await sendGraphMail({
+                to: adminEmail,
+                ccRecipients: ccEmails,
+                subject: `🔧 Spare Approval Required | ${fullItem.asset.asset_name}`,
+                html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Segoe UI, Arial; background:#f4f6f9; padding:30px;">
+    
+<table width="600" align="center" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:25px;background:#fff7ed;">
+<h2 style="margin:0;">🔧 Spare Approval Requested</h2>
+<p style="margin:5px 0 0;font-size:13px;color:#555;">
+Spare part request awaiting your approval
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:25px;font-size:14px;color:#374151;line-height:1.6;">
+
+<p>Hello <strong>${fullItem.request?.approvedBy?.fullName}</strong>,</p>
+
+<p>
+A spare part approval request has been initiated for the below asset.
+</p>
+
+<table width="100%" style="background:#f9fafb;border-radius:8px;padding:15px;margin-top:15px;font-size:13px;">
+
+<tr>
+<td><strong>Asset:</strong></td>
+<td align="right">${fullItem.asset.asset_name}</td>
+</tr>
+
+<tr>
+<td><strong>Requested By:</strong></td>
+<td align="right">${fullItem.request?.requestedBy?.fullName}</td>
+</tr>
+
+<tr>
+<td><strong>Remarks:</strong></td>
+<td align="right">${fullItem.spare_remarks || "No remarks provided"}</td>
+</tr>
+
+<tr>
+<td><strong>Status:</strong></td>
+<td align="right"><strong>REQUESTED</strong></td>
+</tr>
+
+</table>
+
+<div style="text-align:center;margin-top:25px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:12px 24px;
+background:#ea580c;
+color:#fff;
+text-decoration:none;
+border-radius:6px;
+font-weight:600;
+">
+Review Spare Request
+</a>
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:15px;text-align:center;font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group
+</td>
+</tr>
+
+</table>
+
+</body>
+</html>
+`
+            });
+        }
+
         res.json({ message: "Spare approval requested" });
     } catch (err) {
         console.error("REQUEST SPARE APPROVAL ERROR:", err);
@@ -1795,10 +3127,7 @@ export const approveSpareRequest = async (req, res) => {
         }
 
         const item = await AssetRequestItem.findOne({
-            where: {
-                id: request_item_id,
-                company_id, // 🔐
-            },
+            where: { id: request_item_id, company_id },
         });
 
         if (!item) {
@@ -1819,11 +3148,154 @@ export const approveSpareRequest = async (req, res) => {
 
         await item.save();
 
+        /* =====================================================
+           🔔 FETCH FULL CONTEXT FOR MAIL
+        ====================================================== */
+
+        const fullItem = await AssetRequestItem.findOne({
+            where: { id: request_item_id },
+            include: [
+                {
+                    model: Asset,
+                    as: "asset",
+                    attributes: ["asset_name", "make"],
+                },
+                {
+                    model: AssetRequest,
+                    as: "request",
+                    include: [
+                        {
+                            model: User,
+                            as: "requestedBy",
+                            attributes: ["fullName", "email"],
+                        },
+                        {
+                            model: User,
+                            as: "approvedBy", // admin_user_id
+                            attributes: ["fullName", "email"],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        if (fullItem) {
+            const requestedEmail =
+                fullItem.request?.requestedBy?.email;
+
+            const adminEmail =
+                fullItem.request?.approvedBy?.email;
+
+            const inventoryManagers = await User.findAll({
+                where: {
+                    company_id,
+                    role: "INVENTORY_MANAGER",
+                },
+                attributes: ["email"],
+            });
+
+            const ccEmails = [
+                adminEmail,
+                ...inventoryManagers.map(u => u.email),
+            ].filter(Boolean);
+
+            if (requestedEmail) {
+                const isApproved = decision === "APPROVED";
+
+                await sendGraphMail({
+                    to: requestedEmail,
+                    ccRecipients: ccEmails,
+                    subject: `🔩 Spare Request ${decision} | ${fullItem.asset.asset_name}`,
+                    html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Segoe UI, Arial; background:#f4f6f9; padding:30px;">
+    
+<table width="600" align="center" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:25px;background:${isApproved ? "#ecfdf5" : "#fef2f2"};">
+<h2 style="margin:0;">
+${isApproved ? "✅ Spare Request Approved" : "❌ Spare Request Rejected"}
+</h2>
+<p style="margin:5px 0 0;font-size:13px;color:#555;">
+Spare request review completed
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:25px;font-size:14px;color:#374151;line-height:1.6;">
+
+<p>Hello <strong>${fullItem.request?.requestedBy?.fullName}</strong>,</p>
+
+<p>
+Your spare request for the asset 
+<strong>${fullItem.asset.asset_name}</strong> 
+has been <strong>${decision}</strong>.
+</p>
+
+<table width="100%" style="background:#f9fafb;border-radius:8px;padding:15px;margin-top:15px;font-size:13px;">
+
+<tr>
+<td><strong>Asset:</strong></td>
+<td align="right">${fullItem.asset.asset_name}</td>
+</tr>
+
+<tr>
+<td><strong>Decision:</strong></td>
+<td align="right"><strong>${decision}</strong></td>
+</tr>
+
+<tr>
+<td><strong>Reviewed At:</strong></td>
+<td align="right">
+${new Date(item.spare_approved_at).toLocaleString()}
+</td>
+</tr>
+
+</table>
+
+<div style="text-align:center;margin-top:25px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:12px 24px;
+background:${isApproved ? "#16a34a" : "#dc2626"};
+color:#fff;
+text-decoration:none;
+border-radius:6px;
+font-weight:600;
+">
+View Request
+</a>
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:15px;text-align:center;font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group
+</td>
+</tr>
+
+</table>
+
+</body>
+</html>
+`
+                });
+            }
+        }
+
         res.json({
             message: `Spare request ${decision.toLowerCase()} successfully`,
             request_item_id,
             decision,
         });
+
     } catch (err) {
         console.error("APPROVE SPARE REQUEST ERROR:", err);
         res.status(500).json({ message: "Server error" });
@@ -1860,14 +3332,41 @@ export const initiateReturnRequest = async (req, res) => {
         // =====================================================
         // STEP 1: FETCH ORIGINAL REQUEST ITEM (🔐 company safe)
         // =====================================================
+        // const requestItem = await AssetRequestItem.findOne({
+        //     where: {
+        //         id: request_item_id,
+        //         company_id,
+        //     },
+        //     attributes: ["requested_qty", "spare_item"],
+        //     transaction: t,
+        //     lock: t.LOCK.UPDATE,
+        // });
+
         const requestItem = await AssetRequestItem.findOne({
-            where: {
-                id: request_item_id,
-                company_id,
-            },
-            attributes: ["requested_qty", "spare_item"],
-            transaction: t,
-            lock: t.LOCK.UPDATE,
+            where: { id: request_item_id },
+            include: [
+                {
+                    model: Asset,
+                    as: "asset",
+                    attributes: ["asset_name", "make"],
+                },
+                {
+                    model: AssetRequest,
+                    as: "request",
+                    include: [
+                        {
+                            model: User,
+                            as: "requestedBy",
+                            attributes: ["fullName", "email"],
+                        },
+                        {
+                            model: User,
+                            as: "approvedBy", // admin_user_id
+                            attributes: ["fullName", "email"],
+                        },
+                    ],
+                },
+            ],
         });
 
         if (!requestItem) {
@@ -1959,7 +3458,130 @@ export const initiateReturnRequest = async (req, res) => {
             );
         }
 
+
+
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+        });
+
+        const adminEmail =
+            requestItem.request?.approvedBy?.email;
+
+        const requestedUserEmail =
+            requestItem.request?.requestedBy?.email;
+
+        // 🎯 TO = Inventory Managers + Admin
+        const toEmails = [
+            adminEmail,
+            ...inventoryManagers.map(u => u.email),
+        ].filter(Boolean);
+
+        // 📌 CC = Requested person
+        const ccEmails = requestedUserEmail
+            ? [requestedUserEmail]
+            : [];
+
+        // console.log(requestItem, 'requestItem.asset')
+
+        await sendGraphMail({
+            to: toEmails,
+            ccRecipients: ccEmails,
+            subject: `🔄 Return Initiated | ${requestItem.asset.asset_name}`,
+            html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Segoe UI, Arial; background:#f4f6f9; padding:30px;">
+    
+<table width="600" align="center" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:25px;background:#eef2ff;">
+<h2 style="margin:0;">🔄 Return Request Initiated</h2>
+<p style="margin:5px 0 0;font-size:13px;color:#555;">
+Asset return process started
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:25px;font-size:14px;color:#374151;line-height:1.6;">
+
+<p>
+A return request has been initiated for the following asset.
+</p>
+
+<table width="100%" style="background:#f9fafb;border-radius:8px;padding:15px;margin-top:15px;font-size:13px;">
+
+<tr>
+<td><strong>Asset:</strong></td>
+<td align="right">${requestItem.asset.asset_name}</td>
+</tr>
+
+<tr>
+<td><strong>Quantity:</strong></td>
+<td align="right">${return_qty}</td>
+</tr>
+
+<tr>
+<td><strong>Condition:</strong></td>
+<td align="right">${asset_condition}</td>
+</tr>
+
+<tr>
+<td><strong>Return Type:</strong></td>
+<td align="right">${return_type}</td>
+</tr>
+
+<tr>
+<td><strong>Initiated By:</strong></td>
+<td align="right">${requestItem.request?.requestedBy?.fullName}</td>
+</tr>
+
+<tr>
+<td><strong>Status:</strong></td>
+<td align="right">INITIATED</td>
+</tr>
+
+</table>
+
+<div style="text-align:center;margin-top:25px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:12px 24px;
+background:#2563eb;
+color:#fff;
+text-decoration:none;
+border-radius:6px;
+font-weight:600;
+">
+Review Return Request
+</a>
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:15px;text-align:center;font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group
+</td>
+</tr>
+
+</table>
+
+</body>
+</html>
+`,
+        });
+
         await t.commit();
+
 
         res.json({
             message: "Return initiated",
@@ -1979,23 +3601,184 @@ export const initiateReturnRequest = async (req, res) => {
 
 
 //REVIEW RETURN ITEMS
+// export const reviewReturnRequest = async (req, res) => {
+//     const { return_id, decision, inventory_remarks, approvedAdminId } = req.body;
+//     const { company_id } = req.user;
+
+//     const t = await sequelize.transaction();
+//     try {
+//         const request = await AssetReturnRequest.findOne({
+//             where: {
+//                 return_id,
+//                 company_id,
+//             },
+//             include: [
+//                 {
+//                     model: AssetReturnItem,
+//                     as: "items",
+//                     where: { company_id },
+//                     include: [{ model: Asset, as: "asset" }],
+//                 },
+//             ],
+//             transaction: t,
+//             lock: t.LOCK.UPDATE,
+//         });
+
+//         if (!request) {
+//             await t.rollback();
+//             return res
+//                 .status(404)
+//                 .json({ message: "Return request not found for this company" });
+//         }
+
+//         // 🚫 REJECT FLOW
+//         if (decision === "REJECTED") {
+//             await request.update(
+//                 {
+//                     status: "REJECTED",
+//                     inventory_remarks,
+//                 },
+//                 { transaction: t }
+//             );
+
+//             await AssetReturnItem.update(
+//                 { return_qty: 0 },
+//                 {
+//                     where: {
+//                         return_id,
+//                         company_id,
+//                     },
+//                     transaction: t,
+//                 }
+//             );
+
+//             await t.commit();
+//             return res.json({ message: "Return request rejected" });
+//         }
+
+//         // ✅ APPROVAL FLOW
+//         if (decision === "APPROVED") {
+//             await request.update(
+//                 {
+//                     status: "APPROVED",
+//                     inventory_remarks,
+//                 },
+//                 { transaction: t }
+//             );
+
+//             // 🏢 RETURN TO OFFICE
+//             if (request.return_type === "RETURN_TO_OFFICE") {
+//                 for (const item of request.items) {
+//                     await item.asset.increment("qty", {
+//                         by: item.return_qty,
+//                         transaction: t,
+//                     });
+//                 }
+//             }
+
+//             // 🔁 TRANSFER TO ANOTHER SITE
+//             if (
+//                 request.return_type === "TRANSFER_TO_SITE" &&
+//                 request.to_site_id
+//             ) {
+//                 let assetRequest = await AssetRequest.findOne({
+//                     where: {
+//                         site_id: request.to_site_id,
+//                         company_id,
+//                     },
+//                     transaction: t,
+//                     lock: t.LOCK.UPDATE,
+//                 });
+
+//                 if (!assetRequest) {
+//                     assetRequest = await AssetRequest.create(
+//                         {
+//                             req_user_id: request.initiated_by,
+//                             admin_user_id: approvedAdminId,
+//                             admin_approval: "APPROVED",
+//                             req_nature: "TRANSFERRED",
+//                             site_id: request.to_site_id,
+//                             priority_level: "MEDIUM",
+//                             request_remarks: `Auto-created from asset transfer (Return ID: ${request.return_id})`,
+//                             allocated: 1,
+//                             return_identity: request.return_id,
+//                             company_id,
+//                         },
+//                         { transaction: t }
+//                     );
+//                 }
+
+//                 const requestItems = request.items.map((item) => ({
+//                     req_id: assetRequest.req_id,
+//                     asset_id: item.asset_id,
+//                     requested_qty: item.return_qty,
+//                     spare_item: item.spare_check,
+//                     company_id,
+//                 }));
+
+//                 await AssetRequestItem.bulkCreate(requestItems, {
+//                     transaction: t,
+//                 });
+//             }
+
+//             await t.commit();
+//             return res.json({
+//                 message: "Return approved and processed successfully",
+//             });
+//         }
+
+//         await t.rollback();
+//         res.status(400).json({ message: "Invalid decision value" });
+//     } catch (error) {
+//         await t.rollback();
+//         console.error("reviewReturnRequest error:", error);
+//         res.status(500).json({ message: "Internal server error" });
+//     }
+// };
+
 export const reviewReturnRequest = async (req, res) => {
     const { return_id, decision, inventory_remarks, approvedAdminId } = req.body;
     const { company_id } = req.user;
 
     const t = await sequelize.transaction();
+
     try {
+
+        if (!["APPROVED", "REJECTED"].includes(decision)) {
+            return res.status(400).json({
+                message: "Invalid decision value"
+            });
+        }
+
         const request = await AssetReturnRequest.findOne({
-            where: {
-                return_id,
-                company_id,
-            },
+            where: { return_id, company_id },
             include: [
                 {
                     model: AssetReturnItem,
                     as: "items",
-                    where: { company_id },
                     include: [{ model: Asset, as: "asset" }],
+                },
+                {
+                    model: AssetRequestItem,
+                    as: "requestItem",
+                    include: [
+                        {
+                            model: AssetRequest,
+                            as: "request",
+                            include: [
+                                {
+                                    model: User,
+                                    as: "requestedBy",
+                                    attributes: ["fullName", "email"],
+                                },
+                                {
+                                    model: User,
+                                    as: "approvedBy",
+                                    attributes: ["fullName", "email"],
+                                },
+                            ],
+                        },
+                    ],
                 },
             ],
             transaction: t,
@@ -2004,61 +3787,64 @@ export const reviewReturnRequest = async (req, res) => {
 
         if (!request) {
             await t.rollback();
-            return res
-                .status(404)
-                .json({ message: "Return request not found for this company" });
+            return res.status(404).json({
+                message: "Return request not found for this company",
+            });
         }
 
-        // 🚫 REJECT FLOW
+        /* ===============================
+           🚫 REJECT FLOW
+        ================================ */
+
         if (decision === "REJECTED") {
+
             await request.update(
-                {
-                    status: "REJECTED",
-                    inventory_remarks,
-                },
+                { status: "REJECTED", inventory_remarks },
                 { transaction: t }
             );
 
             await AssetReturnItem.update(
                 { return_qty: 0 },
                 {
-                    where: {
-                        return_id,
-                        company_id,
-                    },
-                    transaction: t,
+                    where: { return_id, company_id },
+                    transaction: t
                 }
             );
-
-            await t.commit();
-            return res.json({ message: "Return request rejected" });
         }
 
-        // ✅ APPROVAL FLOW
+        /* ===============================
+           ✅ APPROVED FLOW
+        ================================ */
+
         if (decision === "APPROVED") {
+
             await request.update(
-                {
-                    status: "APPROVED",
-                    inventory_remarks,
-                },
+                { status: "APPROVED", inventory_remarks },
                 { transaction: t }
             );
 
-            // 🏢 RETURN TO OFFICE
+            /* RETURN TO OFFICE */
+
             if (request.return_type === "RETURN_TO_OFFICE") {
-                for (const item of request.items) {
-                    await item.asset.increment("qty", {
-                        by: item.return_qty,
-                        transaction: t,
-                    });
+
+                for (const item of request.items || []) {
+
+                    if (item.asset) {
+                        await item.asset.increment("qty", {
+                            by: item.return_qty,
+                            transaction: t,
+                        });
+                    }
                 }
             }
 
-            // 🔁 TRANSFER TO ANOTHER SITE
+            /* TRANSFER TO SITE */
+
             if (
                 request.return_type === "TRANSFER_TO_SITE" &&
                 request.to_site_id
             ) {
+
                 let assetRequest = await AssetRequest.findOne({
                     where: {
                         site_id: request.to_site_id,
@@ -2069,6 +3855,7 @@ export const reviewReturnRequest = async (req, res) => {
                 });
 
                 if (!assetRequest) {
+
                     assetRequest = await AssetRequest.create(
                         {
                             req_user_id: request.initiated_by,
@@ -2077,7 +3864,7 @@ export const reviewReturnRequest = async (req, res) => {
                             req_nature: "TRANSFERRED",
                             site_id: request.to_site_id,
                             priority_level: "MEDIUM",
-                            request_remarks: `Auto-created from asset transfer (Return ID: ${request.return_id})`,
+                            request_remarks: `Auto-created from transfer (Return ID: ${request.return_id})`,
                             allocated: 1,
                             return_identity: request.return_id,
                             company_id,
@@ -2086,7 +3873,7 @@ export const reviewReturnRequest = async (req, res) => {
                     );
                 }
 
-                const requestItems = request.items.map((item) => ({
+                const requestItems = (request.items || []).map((item) => ({
                     req_id: assetRequest.req_id,
                     asset_id: item.asset_id,
                     requested_qty: item.return_qty,
@@ -2094,23 +3881,153 @@ export const reviewReturnRequest = async (req, res) => {
                     company_id,
                 }));
 
-                await AssetRequestItem.bulkCreate(requestItems, {
-                    transaction: t,
-                });
+                if (requestItems.length > 0) {
+                    await AssetRequestItem.bulkCreate(requestItems, {
+                        transaction: t,
+                    });
+                }
             }
+        }
 
-            await t.commit();
-            return res.json({
-                message: "Return approved and processed successfully",
+        await t.commit();
+
+        /* ===============================
+           📧 EMAIL AFTER COMMIT
+        ================================ */
+
+        const fullContext = await AssetReturnRequest.findOne({
+            where: { return_id },
+            include: [
+                {
+                    model: AssetReturnItem,
+                    as: "items",
+                    include: [{ model: Asset, as: "asset" }],
+                },
+                {
+                    model: AssetRequestItem,
+                    as: "requestItem",
+                    include: [
+                        {
+                            model: AssetRequest,
+                            as: "request",
+                            include: [
+                                {
+                                    model: User,
+                                    as: "requestedBy",
+                                    attributes: ["fullName", "email"],
+                                },
+                                {
+                                    model: User,
+                                    as: "approvedBy",
+                                    attributes: ["fullName", "email"],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const requestedUser = fullContext?.requestItem?.request?.requestedBy;
+        const adminUser = fullContext?.requestItem?.request?.approvedBy;
+
+        const inventoryManagers = await User.findAll({
+            where: {
+                company_id,
+                role: "INVENTORY_MANAGER",
+            },
+            attributes: ["email"],
+        });
+
+        const ccEmails = [
+            adminUser?.email,
+            ...inventoryManagers.map((u) => u.email),
+        ].filter(Boolean);
+
+        /* ===============================
+           BUILD ASSET ROWS HTML
+        ================================ */
+
+        const assetRowsHtml = (fullContext?.items || [])
+            .map(
+                (item) => `
+<tr>
+<td style="padding:10px;border-bottom:1px solid #e5e7eb;">
+${item.asset?.asset_name || "Unknown Asset"}
+</td>
+<td align="right" style="padding:10px;border-bottom:1px solid #e5e7eb;">
+${item.return_qty}
+</td>
+</tr>
+`
+            )
+            .join("");
+
+        if (requestedUser?.email) {
+
+            const isApproved = decision === "APPROVED";
+
+            await sendGraphMail({
+                to: requestedUser.email,
+                ccRecipients: ccEmails,
+                subject: `📦 Asset Return ${decision} | Return ID ${return_id}`,
+                html: `
+<html>
+<body style="font-family:Segoe UI;background:#f4f6f9;padding:30px">
+
+<h2 style="color:${isApproved ? "#16a34a" : "#dc2626"}">
+${isApproved ? "✅ Asset Return Approved" : "❌ Asset Return Rejected"}
+</h2>
+
+<p>Hello <strong>${requestedUser.fullName}</strong>,</p>
+
+<p>
+Your asset return request <strong>${return_id}</strong>
+has been <strong>${decision}</strong>.
+</p>
+
+<table width="100%" style="border-collapse:collapse;border:1px solid #ddd">
+
+<tr style="background:#f3f4f6">
+<th align="left" style="padding:10px">Asset</th>
+<th align="right" style="padding:10px">Quantity</th>
+</tr>
+
+${assetRowsHtml}
+
+</table>
+
+<p style="margin-top:20px">
+<strong>Inventory Remarks:</strong><br/>
+${inventory_remarks || "No remarks provided"}
+</p>
+
+<p style="margin-top:20px;font-size:12px;color:#6b7280">
+Inventory Management System<br/>
+KDM Engineers Group
+</p>
+
+</body>
+</html>
+`,
             });
         }
 
-        await t.rollback();
-        res.status(400).json({ message: "Invalid decision value" });
+        return res.json({
+            message: `Return request ${decision.toLowerCase()} successfully`,
+        });
+
     } catch (error) {
-        await t.rollback();
-        console.error("reviewReturnRequest error:", error);
-        res.status(500).json({ message: "Internal server error" });
+
+        console.error("Return Review Error:", error);
+
+        if (!t.finished) {
+            await t.rollback();
+        }
+
+        return res.status(500).json({
+            message: "Internal server error",
+        });
     }
 };
 
@@ -2150,6 +4067,147 @@ export const requestServicing = async (req, res) => {
         servicing_completed_at: serviced_date || null,
     });
 
+    // Fetch full details with relations
+    const fullItem = await AssetRequestItem.findOne({
+        where: { id: request_item_id },
+        include: [
+            {
+                model: Asset,
+                as: "asset",
+                attributes: ["asset_name", "units", "make"],
+            },
+            {
+                model: AssetRequest,
+                as: "request",
+                include: [
+                    {
+                        model: User,
+                        as: "requestedBy",
+                        attributes: ["fullName", "email"],
+                    },
+                    {
+                        model: User,
+                        as: "approvedBy",
+                        attributes: ["fullName", "email"],
+                    },
+                ],
+            },
+        ],
+    });
+
+    const inventoryManagers = await User.findAll({
+        where: {
+            company_id,
+            role: "INVENTORY_MANAGER",
+        },
+        attributes: ["email"],
+    });
+
+    const ccEmails = [
+        ...inventoryManagers.map(u => u.email),
+        fullItem.request?.requestedBy?.email, // requested person
+    ].filter(Boolean);
+
+    const adminEmail = fullItem.request?.approvedBy?.email;
+
+    if (adminEmail) {
+        await sendGraphMail({
+            to: adminEmail,
+            ccRecipients: ccEmails,
+            subject: `🛠 Servicing Approval Required | ${fullItem.asset.asset_name}`,
+            html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Segoe UI, Arial; background:#f4f6f9; padding:30px;">
+    
+<table width="600" align="center" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:25px;background:#f3f4f6;">
+<h2 style="margin:0;">🛠 Servicing Request Notification</h2>
+<p style="margin:5px 0 0;font-size:13px;color:#555;">
+Asset requires servicing approval
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:25px;font-size:14px;color:#374151;line-height:1.6;">
+<p>Hello <strong>${fullItem.request?.approvedBy?.fullName}</strong>,</p>
+
+<p>
+A servicing request has been submitted for the below asset and is awaiting your approval.
+</p>
+
+<table width="100%" style="background:#f9fafb;border-radius:8px;padding:15px;margin-top:15px;font-size:13px;">
+<tr>
+<td><strong>Asset:</strong></td>
+<td align="right">${fullItem.asset.asset_name}</td>
+</tr>
+
+<tr>
+<td><strong>Requested By:</strong></td>
+<td align="right">${fullItem.request?.requestedBy?.fullName}</td>
+</tr>
+
+<tr>
+<td><strong>Service Person:</strong></td>
+<td align="right">${fullItem.service_person_name || "N/A"}</td>
+</tr>
+
+<tr>
+<td><strong>Mobile:</strong></td>
+<td align="right">${fullItem.service_person_mobile || "N/A"}</td>
+</tr>
+
+<tr>
+<td><strong>Tentative Completion:</strong></td>
+<td align="right">
+${fullItem.servicing_completed_at
+                    ? new Date(fullItem.servicing_completed_at).toLocaleDateString()
+                    : "N/A"}
+</td>
+</tr>
+
+<tr>
+<td><strong>Remarks:</strong></td>
+<td align="right">${fullItem.servicing_remarks || "None"}</td>
+</tr>
+
+</table>
+
+<div style="text-align:center;margin-top:25px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:12px 24px;
+background:#2563eb;
+color:#fff;
+text-decoration:none;
+border-radius:6px;
+font-weight:600;
+">
+Review Servicing Request
+</a>
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:15px;text-align:center;font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group
+</td>
+</tr>
+
+</table>
+
+</body>
+</html>
+`
+        });
+    }
+
     res.json({ message: "Servicing request submitted" });
 };
 
@@ -2178,6 +4236,149 @@ export const reviewServicing = async (req, res) => {
         servicing_remarks: remarks,
         servicing_reviewed_at: new Date(),
     });
+
+    // Fetch full request context
+    const fullItem = await AssetRequestItem.findOne({
+        where: { id: request_item_id },
+        include: [
+            {
+                model: Asset,
+                as: "asset",
+                attributes: ["asset_name", "make"],
+            },
+            {
+                model: AssetRequest,
+                as: "request",
+                include: [
+                    {
+                        model: User,
+                        as: "requestedBy",
+                        attributes: ["fullName", "email"],
+                    },
+                    {
+                        model: User,
+                        as: "approvedBy",
+                        attributes: ["fullName", "email"],
+                    },
+                ],
+            },
+        ],
+    });
+
+    const inventoryManagers = await User.findAll({
+        where: {
+            company_id,
+            role: "INVENTORY_MANAGER",
+        },
+        attributes: ["email"],
+    });
+
+    const ccEmails = [
+        fullItem.request?.approvedBy?.email, // Admin
+        ...inventoryManagers.map(u => u.email),
+    ].filter(Boolean);
+
+    const requestedUserEmail = fullItem.request?.requestedBy?.email;
+
+    if (requestedUserEmail) {
+
+        const isApproved = decision === "APPROVED";
+
+        await sendGraphMail({
+            to: requestedUserEmail,
+            ccRecipients: ccEmails,
+            subject: `🛠 Servicing ${decision} | ${fullItem.asset.asset_name}`,
+            html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Segoe UI, Arial; background:#f4f6f9; padding:30px;">
+    
+<table width="600" align="center" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:25px;background:${isApproved ? "#ecfdf5" : "#fef2f2"};">
+<h2 style="margin:0;">
+${isApproved ? "✅ Servicing Approved" : "❌ Servicing Rejected"}
+</h2>
+<p style="margin:5px 0 0;font-size:13px;color:#555;">
+Asset servicing review completed
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:25px;font-size:14px;color:#374151;line-height:1.6;">
+
+<p>Hello <strong>${fullItem.request?.requestedBy?.fullName}</strong>,</p>
+
+<p>
+Your servicing request for the following asset has been 
+<strong>${decision}</strong>.
+</p>
+
+<table width="100%" style="background:#f9fafb;border-radius:8px;padding:15px;margin-top:15px;font-size:13px;">
+
+<tr>
+<td><strong>Asset:</strong></td>
+<td align="right">${fullItem.asset.asset_name}</td>
+</tr>
+
+<tr>
+<td><strong>Reviewed By:</strong></td>
+<td align="right">${fullItem.request?.approvedBy?.fullName}</td>
+</tr>
+
+<tr>
+<td><strong>Decision:</strong></td>
+<td align="right">${decision}</td>
+</tr>
+
+<tr>
+<td><strong>Reviewer Remarks:</strong></td>
+<td align="right">${remarks || "No remarks provided"}</td>
+</tr>
+
+<tr>
+<td><strong>Reviewed At:</strong></td>
+<td align="right">
+${new Date(fullItem.servicing_reviewed_at).toLocaleString()}
+</td>
+</tr>
+
+</table>
+
+<div style="text-align:center;margin-top:25px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:12px 24px;
+background:${isApproved ? "#16a34a" : "#dc2626"};
+color:#fff;
+text-decoration:none;
+border-radius:6px;
+font-weight:600;
+">
+View Asset Details
+</a>
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:15px;text-align:center;font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group
+</td>
+</tr>
+
+</table>
+
+</body>
+</html>
+`
+        });
+    }
 
     res.json({ message: "Servicing decision recorded" });
 };
@@ -2222,6 +4423,143 @@ export const completeServicing = async (req, res) => {
         await item.update({
             servicing_outcome: "SCRAPPED",
             servicing_completed_at: new Date(),
+        });
+    }
+
+    // Fetch full context for mail
+    const fullItem = await AssetRequestItem.findOne({
+        where: { id: request_item_id },
+        include: [
+            {
+                model: Asset,
+                as: "asset",
+                attributes: ["asset_name", "make"],
+            },
+            {
+                model: AssetRequest,
+                as: "request",
+                include: [
+                    {
+                        model: User,
+                        as: "requestedBy",
+                        attributes: ["fullName", "email"],
+                    },
+                    {
+                        model: User,
+                        as: "approvedBy",
+                        attributes: ["fullName", "email"],
+                    },
+                ],
+            },
+        ],
+    });
+
+    const inventoryManagers = await User.findAll({
+        where: {
+            company_id,
+            role: "INVENTORY_MANAGER",
+        },
+        attributes: ["email"],
+    });
+
+    const ccEmails = [
+        fullItem.request?.requestedBy?.email,
+        ...inventoryManagers.map(u => u.email),
+    ].filter(Boolean);
+
+    const adminEmail = fullItem.request?.approvedBy?.email;
+
+    if (adminEmail) {
+
+        const isCompleted = outcome === "COMPLETED";
+
+        await sendGraphMail({
+            to: adminEmail,
+            ccRecipients: ccEmails,
+            subject: `🛠 Servicing ${outcome} | ${fullItem.asset.asset_name}`,
+            html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Segoe UI, Arial; background:#f4f6f9; padding:30px;">
+    
+<table width="600" align="center" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+<tr>
+<td style="padding:25px;background:${isCompleted ? "#ecfdf5" : "#fef2f2"};">
+<h2 style="margin:0;">
+${isCompleted ? "✅ Servicing Completed" : "🗑 Asset Scrapped"}
+</h2>
+<p style="margin:5px 0 0;font-size:13px;color:#555;">
+Servicing cycle has been officially closed
+</p>
+</td>
+</tr>
+
+<tr>
+<td style="padding:25px;font-size:14px;color:#374151;line-height:1.6;">
+
+<p>Hello <strong>${fullItem.request?.approvedBy?.fullName}</strong>,</p>
+
+<p>
+The servicing process for the following asset has been successfully closed.
+</p>
+
+<table width="100%" style="background:#f9fafb;border-radius:8px;padding:15px;margin-top:15px;font-size:13px;">
+
+<tr>
+<td><strong>Asset:</strong></td>
+<td align="right">${fullItem.asset.asset_name}</td>
+</tr>
+
+<tr>
+<td><strong>Requested By:</strong></td>
+<td align="right">${fullItem.request?.requestedBy?.fullName}</td>
+</tr>
+
+<tr>
+<td><strong>Outcome:</strong></td>
+<td align="right"><strong>${outcome}</strong></td>
+</tr>
+
+<tr>
+<td><strong>Closed At:</strong></td>
+<td align="right">
+${new Date().toLocaleString()}
+</td>
+</tr>
+
+</table>
+
+<div style="text-align:center;margin-top:25px;">
+<a href="https://inventory.kdmengineers.com"
+style="
+display:inline-block;
+padding:12px 24px;
+background:${isCompleted ? "#16a34a" : "#dc2626"};
+color:#fff;
+text-decoration:none;
+border-radius:6px;
+font-weight:600;
+">
+View Asset Details
+</a>
+</div>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:15px;text-align:center;font-size:12px;color:#6b7280;">
+© ${new Date().getFullYear()} KDM Engineers Group
+</td>
+</tr>
+
+</table>
+
+</body>
+</html>
+`
         });
     }
 

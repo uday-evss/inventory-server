@@ -130,8 +130,6 @@ AssetRequestItem.associate = (models) => {
         as: "company",
     });
 
-
-
 };
 
 export default AssetRequestItem;

@@ -1,8 +1,8 @@
 import express from "express";
 import {
     approveSpareRequest, requestSpareApproval, getUsageImages, uploadUsageImage, initiateReturnRequest, reviewReturnRequest,
-    updateSiteEndDate, getAllocatedAssetRequestById, getAllocatedAssetRequests, createAsset,
-    getAssets, deleteAsset, updateAsset, getAssetById, createAssetRequest, getRequestsForAdmin,
+    updateSiteEndDate, getAllocatedAssetRequestById, getAllocatedAssetRequests, createAsset,getAllocatedAssetRequestsByActiveSites,
+    getAssets, deleteAsset, updateAsset, getAssetById, createAssetRequest, getRequestsForAdmin,markAssetsReceived,
     decideAssetRequest, getAssetRequestById, allocateAssetRequest, reviewServicing, requestServicing, completeServicing
 } from "../controllers/asset.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
@@ -37,15 +37,24 @@ router.get("/:id", authenticate, getAssetById);
 router.post("/asset-requests", authenticate, createAssetRequest);
 
 router.get(
+  "/asset-requests/allocated-records/inventory",
+  authenticate,
+  getAllocatedAssetRequestsByActiveSites,
+);
+
+router.get(
+  "/asset-requests/allocated-records",
+  authenticate,
+  getAllocatedAssetRequests,
+);
+
+router.get(
     "/asset-requests/allocated-records/:reqId",
     authenticate,
     getAllocatedAssetRequestById
 );
 
-router.get(
-    "/asset-requests/allocated-records", authenticate,
-    getAllocatedAssetRequests
-);
+
 router.get("/asset-requests/:adminId", authenticate, getRequestsForAdmin);
 router.post("/asset-requests/decision/:reqId", authenticate, decideAssetRequest);
 router.get("/asset-requests/request/:reqId", authenticate, getAssetRequestById);
@@ -54,6 +63,13 @@ router.put(
     authenticate,
     allocateAssetRequest
 );
+
+router.put(
+  "/asset-requests/receive/:reqId",
+  authenticate,
+  markAssetsReceived,
+);
+
 router.put("/asset-requests/site-end-date/:siteId", authenticate, updateSiteEndDate);
 router.post(
     "/asset-usage/:request_item_id",

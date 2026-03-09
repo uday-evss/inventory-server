@@ -98,7 +98,7 @@ export const sendGraphMail = async ({
             }
         );
 
-        console.log("✅ Email sent successfully");
+        // console.log("✅ Email sent successfully");
     } catch (err) {
         console.error("❌ Graph Mail Error:", err.response?.data || err.message);
         throw err;

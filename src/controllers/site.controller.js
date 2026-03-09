@@ -215,101 +215,102 @@ export const getSiteById = async (req, res, next) => {
         const siteId = req.params.id;
 
         const site = await SiteData.findOne({
-            where: {
-                site_id: siteId,
+          where: {
+            site_id: siteId,
+            company_id: companyId,
+          },
+          attributes: [
+            "site_id",
+            "bridge_no",
+            "location",
+            "site_division",
+            "site_last_date",
+          ],
+          include: [
+            {
+              model: AssetRequest,
+              as: "assetRequests",
+              required: false,
+              where: {
                 company_id: companyId,
-            },
-            attributes: [
-                "site_id",
-                "bridge_no",
-                "location",
-                "site_division",
-                "site_last_date",
-            ],
-            include: [
+                admin_approval: "APPROVED",
+                allocated: 1,
+              },
+              include: [
                 {
-                    model: AssetRequest,
-                    as: "assetRequests",
-                    required: false,
-                    where: {
-                        company_id: companyId,
-                        admin_approval: "APPROVED",
-                        allocated: 1,
-                    },
-                    include: [
-                        {
-                            model: User,
-                            as: "requestedBy",
-                            attributes: ["id", "fullName", "username"],
-                        },
-                        {
-                            model: User,
-                            as: "approvedBy",
-                            attributes: ["id", "fullName"],
-                        },
-                        {
-                            model: AssetRequestItem,
-                            as: "items",
-                            required: false,
-                            include: [
-                                {
-                                    model: Asset,
-                                    as: "asset",
-                                    attributes: [
-                                        "asset_id",
-                                        "asset_name",
-                                        "units",
-                                        "asset_type",
-                                        "asset_condition",
-                                        "asset_status",
-                                        "remarks",
-                                    ],
-                                },
-                                {
-                                    model: AssetRequestItemImage,
-                                    as: "images",
-                                    separate: true,
-                                    order: [["uploaded_at", "DESC"]],
-                                    where: { company_id: companyId },
-                                },
-                                {
-                                    model: AssetReturnRequest,
-                                    as: "returnRequests",
-                                    where: { company_id: companyId },
-                                    required: false,
-                                    include: [
-                                        {
-                                            model: SiteData,
-                                            as: "fromSite",
-                                            attributes: ["site_id", "bridge_no", "location"],
-                                        },
-                                        {
-                                            model: SiteData,
-                                            as: "toSite",
-                                            attributes: ["site_id", "bridge_no", "location"],
-                                        },
-                                        {
-                                            model: AssetReturnItem,
-                                            as: "items",
-                                            include: [
-                                                {
-                                                    model: AssetReturnImage,
-                                                    as: "images",
-                                                },
-                                                {
-                                                    model: Asset,
-                                                    as: "asset",
-                                                    attributes: ["asset_id", "asset_name", "units"],
-                                                },
-                                            ],
-                                        },
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
+                  model: User,
+                  as: "requestedBy",
+                  attributes: ["id", "fullName", "username"],
                 },
-            ],
+                {
+                  model: User,
+                  as: "approvedBy",
+                  attributes: ["id", "fullName"],
+                },
+                {
+                  model: AssetRequestItem,
+                  as: "items",
+                  required: false,
+                  include: [
+                    {
+                      model: Asset,
+                      as: "asset",
+                      attributes: [
+                        "asset_id",
+                        "asset_name",
+                        "units",
+                        "asset_type",
+                        "asset_condition",
+                        "asset_status",
+                        "remarks",
+                        "asset_image",
+                      ],
+                    },
+                    {
+                      model: AssetRequestItemImage,
+                      as: "images",
+                      separate: true,
+                      order: [["uploaded_at", "DESC"]],
+                      where: { company_id: companyId },
+                    },
+                    {
+                      model: AssetReturnRequest,
+                      as: "returnRequests",
+                      where: { company_id: companyId },
+                      required: false,
+                      include: [
+                        {
+                          model: SiteData,
+                          as: "fromSite",
+                          attributes: ["site_id", "bridge_no", "location"],
+                        },
+                        {
+                          model: SiteData,
+                          as: "toSite",
+                          attributes: ["site_id", "bridge_no", "location"],
+                        },
+                        {
+                          model: AssetReturnItem,
+                          as: "items",
+                          include: [
+                            {
+                              model: AssetReturnImage,
+                              as: "images",
+                            },
+                            {
+                              model: Asset,
+                              as: "asset",
+                              attributes: ["asset_id", "asset_name", "units"],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         });
 
         if (!site) {
