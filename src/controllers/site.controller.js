@@ -1,7 +1,7 @@
 import db from "../models/index.js";
 // import sequelize from "../config/database.js";
 
-const { SiteData, AssetRequest, AssetRequestItem, AssetReturnRequest, AssetReturnItem, AssetRequestItemImage, AssetReturnImage, User, Asset } = db;
+const { SiteData, AssetRequest, AssetRequestItem, AssetReturnRequest, AssetReturnItem, AssetRequestItemImage, AssetReturnImage, User, Asset, AssetRequestHistory,AssetRequestItemHistory } = db;
 
 //CREATING A SITE
 export const createSite = async (req, res, next) => {
@@ -211,113 +211,181 @@ export const deleteSite = async (req, res, next) => {
 
 export const getSiteById = async (req, res, next) => {
     try {
-        const companyId = req.user.company_id;
-        const siteId = req.params.id;
+      const companyId = req.user.company_id;
+      const siteId = req.params.id;
 
-        const site = await SiteData.findOne({
+      const site = await SiteData.findOne({
+        where: {
+          site_id: siteId,
+          company_id: companyId,
+        },
+        attributes: [
+          "site_id",
+          "bridge_no",
+          "location",
+          "site_division",
+          "site_last_date",
+        ],
+        include: [
+          {
+            model: AssetRequest,
+            as: "assetRequests",
+            required: false,
+            where: {
+              company_id: companyId,
+              admin_approval: "APPROVED",
+              allocated: 1,
+            },
+            include: [
+              {
+                model: User,
+                as: "requestedBy",
+                attributes: ["id", "fullName", "username"],
+              },
+              {
+                model: User,
+                as: "approvedBy",
+                attributes: ["id", "fullName"],
+              },
+              {
+                model: AssetRequestItem,
+                as: "items",
+                required: false,
+                include: [
+                  {
+                    model: Asset,
+                    as: "asset",
+                    attributes: [
+                      "asset_id",
+                      "asset_name",
+                      "units",
+                      "asset_type",
+                      "asset_condition",
+                      "asset_status",
+                      "remarks",
+                      "asset_image",
+                    ],
+                  },
+                  {
+                    model: AssetRequestItemImage,
+                    as: "images",
+                    separate: true,
+                    order: [["uploaded_at", "DESC"]],
+                    where: { company_id: companyId },
+                  },
+                  {
+                    model: AssetReturnRequest,
+                    as: "returnRequests",
+                    where: { company_id: companyId },
+                    required: false,
+                    include: [
+                      {
+                        model: SiteData,
+                        as: "fromSite",
+                        attributes: ["site_id", "bridge_no", "location"],
+                      },
+                      {
+                        model: SiteData,
+                        as: "toSite",
+                        attributes: ["site_id", "bridge_no", "location"],
+                      },
+                      {
+                        model: AssetReturnItem,
+                        as: "items",
+                        include: [
+                          {
+                            model: AssetReturnImage,
+                            as: "images",
+                          },
+                          {
+                            model: Asset,
+                            as: "asset",
+                            attributes: ["asset_id", "asset_name", "units"],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      if (!site) {
+        return res.status(404).json({ message: "Site not found" });
+      }
+
+      /* ================= FETCH REQUEST HISTORY ================= */
+
+      const requestHistoryRaw = await AssetRequestHistory.findAll({
+        where: {
+          site_id: siteId,
+          company_id: companyId,
+        },
+        include: [
+          {
+            model: User,
+            as: "requestedBy",
+            attributes: ["id", "fullName"],
+          },
+          {
+            model: User,
+            as: "approvedBy",
+            attributes: ["id", "fullName"],
+          },
+        ],
+        order: [["action_at", "DESC"]],
+      });
+
+      const reqIds = requestHistoryRaw.map((r) => r.req_id);
+
+      /* ================= FETCH ITEM HISTORY ================= */
+
+      let itemHistoryRaw = [];
+
+      if (reqIds.length > 0) {
+        itemHistoryRaw = await AssetRequestItemHistory.findAll({
           where: {
-            site_id: siteId,
+            req_id: reqIds,
             company_id: companyId,
           },
-          attributes: [
-            "site_id",
-            "bridge_no",
-            "location",
-            "site_division",
-            "site_last_date",
-          ],
           include: [
             {
-              model: AssetRequest,
-              as: "assetRequests",
-              required: false,
-              where: {
-                company_id: companyId,
-                admin_approval: "APPROVED",
-                allocated: 1,
-              },
-              include: [
-                {
-                  model: User,
-                  as: "requestedBy",
-                  attributes: ["id", "fullName", "username"],
-                },
-                {
-                  model: User,
-                  as: "approvedBy",
-                  attributes: ["id", "fullName"],
-                },
-                {
-                  model: AssetRequestItem,
-                  as: "items",
-                  required: false,
-                  include: [
-                    {
-                      model: Asset,
-                      as: "asset",
-                      attributes: [
-                        "asset_id",
-                        "asset_name",
-                        "units",
-                        "asset_type",
-                        "asset_condition",
-                        "asset_status",
-                        "remarks",
-                        "asset_image",
-                      ],
-                    },
-                    {
-                      model: AssetRequestItemImage,
-                      as: "images",
-                      separate: true,
-                      order: [["uploaded_at", "DESC"]],
-                      where: { company_id: companyId },
-                    },
-                    {
-                      model: AssetReturnRequest,
-                      as: "returnRequests",
-                      where: { company_id: companyId },
-                      required: false,
-                      include: [
-                        {
-                          model: SiteData,
-                          as: "fromSite",
-                          attributes: ["site_id", "bridge_no", "location"],
-                        },
-                        {
-                          model: SiteData,
-                          as: "toSite",
-                          attributes: ["site_id", "bridge_no", "location"],
-                        },
-                        {
-                          model: AssetReturnItem,
-                          as: "items",
-                          include: [
-                            {
-                              model: AssetReturnImage,
-                              as: "images",
-                            },
-                            {
-                              model: Asset,
-                              as: "asset",
-                              attributes: ["asset_id", "asset_name", "units"],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
+              model: Asset,
+              as: "asset",
+              attributes: ["asset_id", "asset_name", "units"],
             },
           ],
+          order: [["action_at", "DESC"]],
         });
+      }
 
-        if (!site) {
-            return res.status(404).json({ message: "Site not found" });
+      /* ================= GROUP HISTORY ================= */
+
+      const historyMap = {};
+
+      requestHistoryRaw.forEach((req) => {
+        const r = req.toJSON();
+
+        historyMap[r.req_id] = {
+          ...r,
+          items: [],
+        };
+      });
+
+      itemHistoryRaw.forEach((item) => {
+        const i = item.toJSON();
+
+        if (historyMap[i.req_id]) {
+          historyMap[i.req_id].items.push(i);
         }
+      });
 
-        res.status(200).json({ data: site });
+      const requestHistory = Object.values(historyMap);
+
+      res.status(200).json({ data: site, requestHistory });
     } catch (err) {
         next(err);
     }

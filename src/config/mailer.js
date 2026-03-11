@@ -77,25 +77,27 @@ export const sendGraphMail = async ({
         );
 
         await axios.post(
-            `https://graph.microsoft.com/v1.0/users/info@kdmengineers.com/sendMail`,
-            {
-                message: {
-                    subject,
-                    body: {
-                        contentType: "HTML",
-                        content: html,
-                    },
-                    toRecipients: toFormatted,
-                    ccRecipients: ccFormatted, // ✅ THIS IS THE FIX
-                },
-                saveToSentItems: true,
+          `https://graph.microsoft.com/v1.0/users/info@kdmengineers.com/sendMail`,
+        //   `https://graph.microsoft.com/v1.0/users/info@shodh2s.com/sendMail`,
+
+          {
+            message: {
+              subject,
+              body: {
+                contentType: "HTML",
+                content: html,
+              },
+              toRecipients: toFormatted,
+              ccRecipients: ccFormatted, // ✅ THIS IS THE FIX
             },
-            {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    "Content-Type": "application/json",
-                },
-            }
+            saveToSentItems: true,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          },
         );
 
         // console.log("✅ Email sent successfully");
