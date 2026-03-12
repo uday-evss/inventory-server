@@ -100,6 +100,7 @@ export const forgotPassword = async (req, res) => {
 
         // 4️⃣ Send Microsoft Graph Mail
         await sendGraphMail({
+             companyId: user.company_id,
             to: user.email,
             subject: `🔐 Password Reset | KDM Engineers Inventory System`,
             html: `

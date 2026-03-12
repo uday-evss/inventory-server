@@ -489,6 +489,7 @@ export const createAssetRequest = async (req, res) => {
 
         // 📧 Send approval email via Microsoft Graph
         await sendGraphMail({
+            companyId,
             to: fullRequest.approvedBy?.email,
             ccRecipients,
             subject: `${priorityEmoji} New Asset Request | ${fullRequest.site?.location} | ${fullRequest.priority_level} Priority | Approval Required`,
@@ -1400,6 +1401,7 @@ export const decideAssetRequest = async (req, res) => {
         }
 
         await sendGraphMail({
+             companyId,
             to: request.requestedBy?.email,
             ccRecipients,
             subject,
@@ -2277,6 +2279,7 @@ export const allocateAssetRequest = async (req, res) => {
             }));
 
            await sendGraphMail({
+             companyId,
     to: [
     request.approvedBy?.email,
     request.requestedBy?.email
@@ -2606,6 +2609,7 @@ export const markAssetsReceived = async (req, res) => {
         if (fullRequest?.approvedBy?.email) {
 
             await sendGraphMail({
+                 companyId,
                 to: fullRequest.approvedBy.email,
                 ccRecipients,
                 subject: `📦 Assets Received | ${fullRequest.site?.location} | Request ${reqId}`,
@@ -3180,7 +3184,7 @@ export const getAllocatedAssetRequestsByActiveSites = async (req, res, next) => 
     };
 });
 
-        console.log(requests,'requests098')
+        // console.log(requests,'requests098')
 
         res.json(filteredRequests);
     } catch (err) {
@@ -3398,6 +3402,7 @@ export const requestSpareApproval = async (req, res) => {
 
         if (adminEmail) {
             await sendGraphMail({
+                companyId: company_id,
                 to: adminEmail,
                 ccRecipients: ccEmails,
                 subject: `🔧 Spare Approval Required | ${fullItem.asset.asset_name}`,
@@ -3584,6 +3589,7 @@ export const approveSpareRequest = async (req, res) => {
                 const isApproved = decision === "APPROVED";
 
                 await sendGraphMail({
+                    companyId: company_id,
                     to: requestedEmail,
                     ccRecipients: ccEmails,
                     subject: `🔩 Spare Request ${decision} | ${fullItem.asset.asset_name}`,
@@ -3869,6 +3875,7 @@ export const initiateReturnRequest = async (req, res) => {
         // console.log(requestItem, 'requestItem.asset')
 
         await sendGraphMail({
+            companyId:company_id,
             to: toEmails,
             ccRecipients: ccEmails,
             subject: `🔄 Return Initiated | ${requestItem.asset.asset_name}`,
@@ -4349,6 +4356,7 @@ ${item.return_qty}
             const isApproved = decision === "APPROVED";
 
             await sendGraphMail({
+                companyId:company_id,
                 to: requestedUser.email,
                 ccRecipients: ccEmails,
                 subject: `📦 Asset Return ${decision} | Return ID ${return_id}`,
@@ -4493,6 +4501,7 @@ export const requestServicing = async (req, res) => {
 
     if (adminEmail) {
         await sendGraphMail({
+            companyId:company_id,
             to: adminEmail,
             ccRecipients: ccEmails,
             subject: `🛠 Servicing Approval Required | ${fullItem.asset.asset_name}`,
@@ -4666,6 +4675,7 @@ export const reviewServicing = async (req, res) => {
         const isApproved = decision === "APPROVED";
 
         await sendGraphMail({
+            companyId:company_id,
             to: requestedUserEmail,
             ccRecipients: ccEmails,
             subject: `🛠 Servicing ${decision} | ${fullItem.asset.asset_name}`,
@@ -4855,6 +4865,7 @@ export const completeServicing = async (req, res) => {
         const isCompleted = outcome === "COMPLETED";
 
         await sendGraphMail({
+            companyId:company_id,
             to: adminEmail,
             ccRecipients: ccEmails,
             subject: `🛠 Servicing ${outcome} | ${fullItem.asset.asset_name}`,
