@@ -303,7 +303,6 @@ export const getDashboardData = async (req, res) => {
         const today = new Date();
 
         /* ================= SITE STATS ================= */
-
         const siteStatsRaw = await SiteData.findAll({
             where: { company_id: companyId },
             include: [
@@ -353,8 +352,6 @@ export const getDashboardData = async (req, res) => {
                 },
             ],
         });
-
-
 
         const siteStats = siteStatsRaw.map(site => {
             let allocated = 0,

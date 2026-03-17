@@ -1,9 +1,31 @@
 import express from "express";
 import {
-    approveSpareRequest, requestSpareApproval, getUsageImages, uploadUsageImage, initiateReturnRequest, reviewReturnRequest,
-    updateSiteEndDate, getAllocatedAssetRequestById, getAllocatedAssetRequests, createAsset,getAllocatedAssetRequestsByActiveSites,
-    getAssets, deleteAsset, updateAsset, getAssetById, createAssetRequest, getRequestsForAdmin,markAssetsReceived,
-    decideAssetRequest, getAssetRequestById, allocateAssetRequest, reviewServicing, requestServicing, completeServicing
+  approveSpareRequest,
+  requestSpareApproval,
+  getUsageImages,
+  uploadUsageImage,
+  initiateReturnRequest,
+  reviewReturnRequest,
+  updateSiteEndDate,
+  getAllocatedAssetRequestById,
+  getAllocatedAssetRequests,
+  createAsset,
+  getAllocatedAssetRequestsByActiveSites,
+  getAssets,
+  deleteAsset,
+  updateAsset,
+  getAssetById,
+  createAssetRequest,
+  getRequestsForAdmin,
+  markAssetsReceived,
+  decideAssetRequest,
+  getAssetRequestById,
+  allocateAssetRequest,
+  reviewServicing,
+  requestServicing,
+  completeServicing,
+  deleteRequestItem,
+  updateRequestItemQty,
 } from "../controllers/asset.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
@@ -58,6 +80,21 @@ router.get(
 router.get("/asset-requests/:adminId", authenticate, getRequestsForAdmin);
 router.post("/asset-requests/decision/:reqId", authenticate, decideAssetRequest);
 router.get("/asset-requests/request/:reqId", authenticate, getAssetRequestById);
+
+// DELETE ITEM
+router.delete(
+  "/asset-requests/item/:itemId",
+  authenticate,
+  deleteRequestItem,
+);
+
+// UPDATE ITEM QTY
+router.put(
+  "/asset-requests/item/:itemId",
+  authenticate,
+  updateRequestItemQty,
+);
+
 router.put(
     "/asset-requests/allocate/:reqId",
     authenticate,

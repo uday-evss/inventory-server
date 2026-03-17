@@ -1891,7 +1891,37 @@ export const getAssetRequestById = async (req, res) => {
     }
 };
 
+//DELETE ITEM FROM REQUEST
+export const deleteRequestItem = async (req, res) => {
+  try {
+    const { itemId } = req.params;
 
+    await AssetRequestItem.destroy({
+      where: { id: itemId },
+    });
+
+    res.json({ message: "Item deleted" });
+  } catch (err) {
+    res.status(500).json({ message: "Delete failed" });
+  }
+};
+
+//UPDATE ITEM QTY IN THE REQUEST
+export const updateRequestItemQty = async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { requested_qty } = req.body;
+
+    await AssetRequestItem.update(
+      { requested_qty },
+      { where: { id: itemId } }
+    );
+
+    res.json({ message: "Updated successfully" });
+  } catch (err) {
+    res.status(500).json({ message: "Update failed" });
+  }
+};
 
 //MARK ASSET REQUEST AS ALLOCATED
 // export const allocateAssetRequest = async (req, res) => {
