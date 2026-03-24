@@ -163,14 +163,7 @@ export const getAssets = async (req, res, next) => {
             const pendingQty = Number(assetJson.pending_requested_qty || 0);
             const availableQty = assetJson.qty - pendingQty;
             // console.log(assetJson.qty, pendingQty, availableQty);
-// let availabilityMessage='';
-// if (availableQty < 0) {
-//     availabilityMessage = `Have to send ${Math.abs(availableQty)} ${assetJson.units} to the sites`;
-// } else if (pendingQty > 0) {
-//     availabilityMessage = `Currently ${availableQty} ${assetJson.units} available. ${pendingQty} ${assetJson.units} are reserved in pending requests.`;
-// } else {
-//     availabilityMessage = `All ${availableQty} ${assetJson.units} are available`;
-// }
+
             return {
                 ...assetJson,
                 pending_requested_qty: pendingQty,
@@ -385,6 +378,302 @@ export const getAssetById = async (req, res, next) => {
 
 
 //CREATING ASSET REQUEST
+// export const createAssetRequest = async (req, res) => {
+//     const transaction = await sequelize.transaction();
+
+//     try {
+//         const {
+//             req_user_id,
+//             admin_user_id,
+//             site_id,
+//             priority_level,
+//             request_remarks,
+//             items,  asset_origin,
+//   origin_site_id
+//         } = req.body;
+
+//         const companyId = req.user.company_id;
+//         // 1️⃣ Create request
+//         const assetRequest = await AssetRequest.create(
+//             {
+//                 req_user_id,
+//                 admin_user_id,
+//                 site_id,
+//                 priority_level,
+//                 request_remarks, allocated: 0,
+//                 company_id: companyId,  asset_origin,
+//   origin_site_id
+//             },
+//             { transaction }
+//         );
+
+
+
+//         const requestItems = items.map(item => ({
+//     req_id: assetRequest.req_id,
+//     asset_id: item.asset_id,
+//     requested_qty: item.requested_qty,
+//     spare_item: asset_origin === "SITE" ? false : (item.spare_item ?? false),
+//     company_id: companyId,
+// }));
+
+//         await AssetRequestItem.bulkCreate(requestItems, { transaction });
+
+//         // After bulkCreate but BEFORE commit
+//         const fullRequest = await AssetRequest.findOne({
+//             where: { req_id: assetRequest.req_id },
+//             include: [
+//                 {
+//                     model: User,
+//                     as: "requestedBy",
+//                     attributes: ["id", "fullName", "email", "mobile", "role"],
+//                 },
+//                 {
+//                     model: User,
+//                     as: "approvedBy",
+//                     attributes: ["id", "fullName", "email", "mobile", "role"],
+//                 },
+//                 {
+//                     model: SiteData,
+//                     as: "site",
+//                 },
+//                 {
+//                     model: AssetRequestItem,
+//                     as: "items",
+//                     include: [
+//                         {
+//                             model: Asset,
+//                             as: "asset",   // 🔥 THIS IS THE FIX
+//                             attributes: ["asset_name", "units", "make"],
+//                         },
+//                     ],
+//                 },
+//             ],
+//             transaction,
+//         });
+
+//         // console.log(fullRequest.items, 'items')
+
+//         const priorityEmoji = fullRequest.priority_level === "HIGH" ? "🔴" : fullRequest.priority_level === "MEDIUM" ? "🟡" : "🟢";
+
+//         const inventoryManagers = await User.findAll({
+//             where: {
+//                 company_id: companyId,
+//                 role: "INVENTORY_MANAGER",
+//             },
+//             attributes: ["email"],
+//         });
+
+//         const ccEmails = inventoryManagers
+//             .map(user => user.email)
+//             .filter(email => !!email);
+
+//         const ccRecipients = ccEmails.map(email => ({
+//             emailAddress: { address: email }
+//         }));
+
+//         // 📧 Send approval email via Microsoft Graph
+//         await sendGraphMail({
+//             companyId,
+//             to: fullRequest.approvedBy?.email,
+//             ccRecipients,
+//             subject: `${priorityEmoji} New Asset Request | ${fullRequest.site?.location} | ${fullRequest.priority_level} Priority | Approval Required`,
+//             html: `
+// <!DOCTYPE html>
+// <html>
+// <head>
+// <meta charset="UTF-8" />
+// <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+// <title>Asset Request</title>
+// </head>
+// <body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+
+// <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+// <tr>
+// <td align="center">
+
+// <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+
+// <!-- Header -->
+// <tr>
+// <td style="background-color:#f3f4f6;padding:30px;">
+// <h1 style="color:#111827;margin:0;font-size:22px;letter-spacing:0.5px;">
+// 📦 Asset Request Notification
+// </h1>
+// <p style="color:#374151;margin:8px 0 0 0;font-size:14px;">
+// Inventory Management System
+// </p>
+// </td>
+// </tr>
+
+// <!-- Status Badge -->
+// <tr>
+// <td style="padding:25px 30px 0 30px;">
+// <span style="
+// display:inline-block;
+// padding:6px 14px;
+// border-radius:50px;
+// font-size:12px;
+// font-weight:600;
+// background:${fullRequest.priority_level === "HIGH" ? "#fee2e2" : fullRequest.priority_level === "MEDIUM" ? "#fef3c7" : "#e0f2fe"};
+// color:${fullRequest.priority_level === "HIGH" ? "#b91c1c" : fullRequest.priority_level === "MEDIUM" ? "#92400e" : "#075985"};
+// ">
+// ${fullRequest.priority_level} PRIORITY
+// </span>
+// </td>
+// </tr>
+
+// <!-- Body -->
+// <tr>
+// <td style="padding:20px 30px 10px 30px;color:#374151;font-size:14px;line-height:1.6;">
+// <p>Hello <strong>${fullRequest.approvedBy?.fullName}</strong>,</p>
+
+// <p>
+// A new asset request has been created and is awaiting your review.
+// Below are the request details:
+// </p>
+// </td>
+// </tr>
+
+// <!-- Request Summary Card -->
+// <tr>
+// <td style="padding:10px 30px;">
+// <table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;">
+// <tr>
+// <td style="font-size:13px;color:#6b7280;">Request ID</td>
+// <td align="right" style="font-weight:600;color:#111827;">${fullRequest.req_id}</td>
+// </tr>
+// <tr>
+// <td style="font-size:13px;color:#6b7280;padding-top:10px;">Requested By</td>
+// <td align="right" style="font-weight:600;padding-top:10px;">${fullRequest.requestedBy?.fullName}</td>
+// </tr>
+// <tr>
+// <td style="font-size:13px;color:#6b7280;padding-top:10px;">Site Location</td>
+// <td align="right" style="font-weight:600;padding-top:10px;">
+// ${fullRequest.site?.location} | Bridge ${fullRequest.site?.bridge_no}
+// </td>
+// </tr>
+// <tr>
+// <td style="font-size:13px;color:#6b7280;padding-top:10px;">Requested On</td>
+// <td align="right" style="font-weight:600;padding-top:10px;">
+// ${new Date(fullRequest.requested_at).toLocaleString()}
+// </td>
+// </tr>
+// </table>
+// </td>
+// </tr>
+
+// <!-- Items Section -->
+// <tr>
+// <td style="padding:20px 30px 0 30px;">
+// <h3 style="margin:0 0 10px 0;color:#111827;font-size:16px;">
+// Requested Items
+// </h3>
+// <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+// <tr style="background:#f3f4f6;color:#374151;font-weight:600;">
+// <td align="left">Asset Name</td>
+// <td align="center">Qty</td>
+// </tr>
+
+// ${fullRequest.items.map(item => {
+//                 const isSpare = item.spare_item;
+
+//                 const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+//                 const badgeColor = isSpare ? "#92400e" : "#075985";
+//                 const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+
+//                 return `
+// <tr style="border-bottom:1px solid #e5e7eb;">
+// <td style="vertical-align:middle;">
+//   <span style="font-weight:600;color:#111827;">
+//     ${item.asset?.asset_name || "N/A"}
+//   </span>
+//   <span style="
+//     display:inline-block;
+//     margin-left:8px;
+//     padding:3px 8px;
+//     font-size:10px;
+//     font-weight:600;
+//     border-radius:50px;
+//     background:${badgeBg};
+//     color:${badgeColor};
+//   ">
+//     ${label}
+//   </span>
+// </td>
+// <td align="center" style="vertical-align:middle;">
+//   ${item.requested_qty}
+// </td>
+// </tr>
+// `;
+//             }).join("")}
+
+// </table>
+// </td>
+// </tr>
+
+// <!-- Remarks -->
+// <tr>
+// <td style="padding:20px 30px 0 30px;font-size:14px;color:#374151;">
+// <strong>Remarks:</strong><br/>
+// ${fullRequest.request_remarks || "No additional remarks provided."}
+// </td>
+// </tr>
+
+// <!-- CTA -->
+// <tr>
+// <td align="center" style="padding:30px;">
+// <a href="https://inventory.kdmengineers.com"
+// style="
+// display:inline-block;
+// padding:14px 28px;
+// background:#2563eb;
+// color:#ffffff;
+// text-decoration:none;
+// border-radius:8px;
+// font-weight:600;
+// font-size:14px;
+// box-shadow:0 6px 16px rgba(37,99,235,0.4);
+// ">
+// Review & Approve Request
+// </a>
+// </td>
+// </tr>
+
+// <!-- Footer -->
+// <tr>
+// <td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
+// This is an automated notification from KDM Engineers Inventory System.<br/>
+// © ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+// </td>
+// </tr>
+
+// </table>
+// </td>
+// </tr>
+// </table>
+
+// </body>
+// </html>
+// `
+//         });
+
+//         // 3️⃣ Commit
+//         await transaction.commit();
+
+//         return res.status(201).json({
+//             message: "Asset request created successfully",
+//             data: fullRequest,
+//         });
+//     } catch (error) {
+//         await transaction.rollback();
+//         console.error(error);
+//         return res.status(500).json({
+//             message: "Failed to create asset request",
+//         });
+//     }
+// };
+
 export const createAssetRequest = async (req, res) => {
     const transaction = await sequelize.transaction();
 
@@ -395,46 +684,126 @@ export const createAssetRequest = async (req, res) => {
             site_id,
             priority_level,
             request_remarks,
-            items,  asset_origin,
-  origin_site_id
+            items,
+            asset_origin,
+            origin_site_id
         } = req.body;
 
         const companyId = req.user.company_id;
-        // 1️⃣ Create request
+
+        /* ================= CREATE REQUEST ================= */
+
         const assetRequest = await AssetRequest.create(
             {
                 req_user_id,
                 admin_user_id,
                 site_id,
                 priority_level,
-                request_remarks, allocated: 0,
-                company_id: companyId,  asset_origin,
-  origin_site_id
+                request_remarks,
+                allocated: 0,
+                company_id: companyId,
+                asset_origin,
+                origin_site_id
             },
             { transaction }
         );
 
-        // 2️⃣ Create request items
+        /* ================= PREPARE ITEMS ================= */
 
-        // const requestItems = items.map(item => ({
-        //     req_id: assetRequest.req_id,
-        //     asset_id: item.asset_id,
-        //     requested_qty: item.requested_qty,
-        //     spare_item: item.spare_item ?? false, // ✅ NEW
-        //     company_id: companyId,
-        // }));
+        const requestItems = [];
 
-        const requestItems = items.map(item => ({
-    req_id: assetRequest.req_id,
-    asset_id: item.asset_id,
-    requested_qty: item.requested_qty,
-    spare_item: asset_origin === "SITE" ? false : (item.spare_item ?? false),
-    company_id: companyId,
-}));
+        for (const item of items) {
 
-        await AssetRequestItem.bulkCreate(requestItems, { transaction });
+            let available = 0;
 
-        // After bulkCreate but BEFORE commit
+            /* ===== OFFICE INVENTORY ===== */
+            if (asset_origin === "OFFICE") {
+
+                const asset = await Asset.findOne({
+                    where: {
+                        asset_id: item.asset_id,
+                        company_id: companyId,
+                    },
+                    transaction,
+                });
+
+                if (!asset) throw new Error("Asset not found");
+
+                available = asset.qty;
+            }
+
+            /* ===== SITE INVENTORY ===== */
+            if (asset_origin === "SITE") {
+
+                const originRequest = await AssetRequest.findOne({
+                    where: {
+                        site_id: origin_site_id,
+                        admin_approval: "APPROVED",
+                        company_id: companyId,
+                    },
+                    transaction,
+                });
+
+                if (!originRequest) {
+                    throw new Error("Origin site inventory not found");
+                }
+
+                const originItem = await AssetRequestItem.findOne({
+                    where: {
+                        req_id: originRequest.req_id,
+                        asset_id: item.asset_id,
+                        company_id: companyId,
+                    },
+                    transaction,
+                });
+
+                if (!originItem) {
+                    throw new Error("Origin site asset not found");
+                }
+
+                available = originItem.requested_qty;
+            }
+
+            const requested = item.requested_qty;
+
+            const toPurchase = available >= requested
+                ? 0
+                : (requested - available);
+
+            requestItems.push({
+                req_id: assetRequest.req_id,
+                asset_id: item.asset_id,
+                requested_qty: requested,
+                to_purchase_qty: toPurchase, // ✅ STORED HERE
+                spare_item: asset_origin === "SITE"
+                    ? false
+                    : (item.spare_item ?? false),
+                company_id: companyId,
+            });
+        }
+
+        /* ================= CREATE ITEMS (IMPORTANT) ================= */
+
+        const createdItems = await AssetRequestItem.bulkCreate(requestItems, {
+            transaction,
+            returning: true, // 🔥 CRITICAL FIX
+        });
+
+        /* ================= CREATE HISTORY (FIXED) ================= */
+
+        for (const item of createdItems) {
+            await AssetRequestItemHistory.create(
+                {
+                    ...item.toJSON(), // ✅ includes all fields
+                    original_item_id: item.id, // ✅ NO MORE NULL ERROR
+                    action_type: "CREATED",
+                },
+                { transaction }
+            );
+        }
+
+        /* ================= FETCH FULL REQUEST ================= */
+
         const fullRequest = await AssetRequest.findOne({
             where: { req_id: assetRequest.req_id },
             include: [
@@ -458,7 +827,7 @@ export const createAssetRequest = async (req, res) => {
                     include: [
                         {
                             model: Asset,
-                            as: "asset",   // 🔥 THIS IS THE FIX
+                            as: "asset",
                             attributes: ["asset_name", "units", "make"],
                         },
                     ],
@@ -467,9 +836,24 @@ export const createAssetRequest = async (req, res) => {
             transaction,
         });
 
-        // console.log(fullRequest.items, 'items')
+        /* ================= EMAIL LOGIC ================= */
 
-        const priorityEmoji = fullRequest.priority_level === "HIGH" ? "🔴" : fullRequest.priority_level === "MEDIUM" ? "🟡" : "🟢";
+
+        const AUTO_APPROVE_COMPANY = "950e8400-e29b-41d4-a716-446655331111";
+
+let canAutoApprove = false;
+
+if (companyId === AUTO_APPROVE_COMPANY) {
+    canAutoApprove = items.every(item => {
+        const createdItem = requestItems.find(i => i.asset_id === item.asset_id);
+        return createdItem && createdItem.to_purchase_qty === 0;
+    });
+}
+
+        const priorityEmoji =
+            fullRequest.priority_level === "HIGH" ? "🔴"
+                : fullRequest.priority_level === "MEDIUM" ? "🟡"
+                    : "🟢";
 
         const inventoryManagers = await User.findAll({
             where: {
@@ -479,16 +863,97 @@ export const createAssetRequest = async (req, res) => {
             attributes: ["email"],
         });
 
-        const ccEmails = inventoryManagers
+        const ccRecipients = inventoryManagers
             .map(user => user.email)
-            .filter(email => !!email);
+            .filter(Boolean)
+            .map(email => ({
+                emailAddress: { address: email }
+            }));
 
-        const ccRecipients = ccEmails.map(email => ({
-            emailAddress: { address: email }
-        }));
+            /* ================= PURCHASE SECTION ================= */
 
-        // 📧 Send approval email via Microsoft Graph
-        await sendGraphMail({
+const purchaseRequirements = fullRequest.items
+    .filter(item => item.to_purchase_qty > 0)
+    .map(item => ({
+        asset_name: item.asset?.asset_name || "N/A",
+        units: item.asset?.units || "",
+        requested: item.requested_qty,
+        available: item.requested_qty - item.to_purchase_qty,
+        toPurchase: item.to_purchase_qty,
+        origin: fullRequest.asset_origin
+    }));
+
+// let purchaseSection = "";
+
+// if (purchaseRequirements.length > 0) {
+
+//   purchaseSection = `
+//   <tr>
+//   <td style="padding:20px 30px 0 30px;">
+    
+//     <div style="
+//       background:#fef2f2;
+//       border:1px solid #fecaca;
+//       border-radius:12px;
+//       padding:18px;
+//     ">
+
+//       <h3 style="
+//         margin:0 0 12px 0;
+//         color:#b91c1c;
+//         font-size:15px;
+//       ">
+//         ⚠️ Additional Assets Required
+//       </h3>
+
+//       <table width="100%" cellpadding="8" cellspacing="0"
+//       style="border-collapse:collapse;font-size:13px;">
+
+//         <tr style="
+//           background:#fee2e2;
+//           font-weight:600;
+//           color:#7f1d1d;
+//         ">
+//           <td>Asset</td>
+//           <td align="center">Requested</td>
+//           <td align="center">Available</td>
+//           <td align="center">Need to Purchase</td>
+//         </tr>
+
+//         ${purchaseRequirements.map(p => `
+//         <tr style="border-bottom:1px solid #fecaca;">
+//           <td>${p.asset_name}</td>
+//           <td align="center">${p.requested}</td>
+//           <td align="center">${p.available}</td>
+//           <td align="center" style="font-weight:600;color:#dc2626;">
+//             ${p.toPurchase} ${p.units}
+//           </td>
+//         </tr>
+//         `).join("")}
+
+//       </table>
+
+//       <p style="
+//         margin-top:12px;
+//         font-size:13px;
+//         color:#b91c1c;
+//         font-weight:500;
+//       ">
+//         Please arrange purchase of the above assets.
+//       </p>
+
+//     </div>
+
+//   </td>
+//   </tr>
+//   `;
+// }
+
+if(!canAutoApprove){
+
+
+  
+   await sendGraphMail({
             companyId,
             to: fullRequest.approvedBy?.email,
             ccRecipients,
@@ -496,34 +961,32 @@ export const createAssetRequest = async (req, res) => {
             html: `
 <!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Asset Request</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:Segoe UI, Arial, sans-serif;">
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI, Arial;">
 
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f4f6f9;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
 <tr>
 <td align="center">
 
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+<table width="600" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:14px;overflow:hidden;
+box-shadow:0 10px 35px rgba(0,0,0,0.08);">
 
-<!-- Header -->
+<!-- HEADER -->
 <tr>
-<td style="background-color:#f3f4f6;padding:30px;">
-<h1 style="color:#111827;margin:0;font-size:22px;letter-spacing:0.5px;">
-📦 Asset Request Notification
-</h1>
-<p style="color:#374151;margin:8px 0 0 0;font-size:14px;">
+<td style="padding:30px;
+background:#eef2ff;">
+<h2 style="margin:0;color:#1e3a8a;">
+📦 New Asset Request
+</h2>
+<p style="margin-top:6px;font-size:13px;color:#374151;">
 Inventory Management System
 </p>
 </td>
 </tr>
 
-<!-- Status Badge -->
+<!-- PRIORITY BADGE -->
 <tr>
-<td style="padding:25px 30px 0 30px;">
+<td style="padding:20px 30px 0 30px;">
 <span style="
 display:inline-block;
 padding:6px 14px;
@@ -533,105 +996,117 @@ font-weight:600;
 background:${fullRequest.priority_level === "HIGH" ? "#fee2e2" : fullRequest.priority_level === "MEDIUM" ? "#fef3c7" : "#e0f2fe"};
 color:${fullRequest.priority_level === "HIGH" ? "#b91c1c" : fullRequest.priority_level === "MEDIUM" ? "#92400e" : "#075985"};
 ">
-${fullRequest.priority_level} PRIORITY
+${priorityEmoji} ${fullRequest.priority_level} PRIORITY
 </span>
 </td>
 </tr>
 
-<!-- Body -->
+<!-- BODY -->
 <tr>
-<td style="padding:20px 30px 10px 30px;color:#374151;font-size:14px;line-height:1.6;">
+<td style="padding:20px 30px;color:#374151;font-size:14px;line-height:1.6;">
 <p>Hello <strong>${fullRequest.approvedBy?.fullName}</strong>,</p>
 
 <p>
-A new asset request has been created and is awaiting your review.
-Below are the request details:
+A new asset request has been submitted and requires your approval.
+Please review the details below.
 </p>
 </td>
 </tr>
 
-<!-- Request Summary Card -->
+<!-- SUMMARY CARD -->
 <tr>
-<td style="padding:10px 30px;">
-<table width="100%" style="background:#f9fafb;border-radius:10px;padding:20px;">
+<td style="padding:0 30px 20px 30px;">
+<table width="100%" style="
+background:#f9fafb;
+border-radius:12px;
+padding:18px;
+border:1px solid #e5e7eb;
+">
+
 <tr>
 <td style="font-size:13px;color:#6b7280;">Request ID</td>
-<td align="right" style="font-weight:600;color:#111827;">${fullRequest.req_id}</td>
+<td align="right" style="font-weight:600;">${fullRequest.req_id}</td>
 </tr>
+
 <tr>
-<td style="font-size:13px;color:#6b7280;padding-top:10px;">Requested By</td>
-<td align="right" style="font-weight:600;padding-top:10px;">${fullRequest.requestedBy?.fullName}</td>
-</tr>
-<tr>
-<td style="font-size:13px;color:#6b7280;padding-top:10px;">Site Location</td>
+<td style="padding-top:10px;font-size:13px;color:#6b7280;">Requested By</td>
 <td align="right" style="font-weight:600;padding-top:10px;">
-${fullRequest.site?.location} | Bridge ${fullRequest.site?.bridge_no}
+${fullRequest.requestedBy?.fullName}
 </td>
 </tr>
+
 <tr>
-<td style="font-size:13px;color:#6b7280;padding-top:10px;">Requested On</td>
+<td style="padding-top:10px;font-size:13px;color:#6b7280;">Site</td>
+<td align="right" style="font-weight:600;padding-top:10px;">
+${fullRequest.site?.location} — Bridge ${fullRequest.site?.bridge_no}
+</td>
+</tr>
+
+<tr>
+<td style="padding-top:10px;font-size:13px;color:#6b7280;">Date</td>
 <td align="right" style="font-weight:600;padding-top:10px;">
 ${new Date(fullRequest.requested_at).toLocaleString()}
 </td>
 </tr>
+
 </table>
 </td>
 </tr>
 
-<!-- Items Section -->
+<!-- ITEMS -->
 <tr>
-<td style="padding:20px 30px 0 30px;">
-<h3 style="margin:0 0 10px 0;color:#111827;font-size:16px;">
+<td style="padding:10px 30px;">
+<h3 style="margin-bottom:10px;color:#111827;">
 Requested Items
 </h3>
-<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
-<tr style="background:#f3f4f6;color:#374151;font-weight:600;">
-<td align="left">Asset Name</td>
+
+<table width="100%" cellpadding="10" cellspacing="0"
+style="border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+
+<tr style="background:#f3f4f6;font-weight:600;">
+<td>Asset</td>
 <td align="center">Qty</td>
 </tr>
 
 ${fullRequest.items.map(item => {
-                const isSpare = item.spare_item;
+    const isSpare = item.spare_item;
 
-                const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
-                const badgeColor = isSpare ? "#92400e" : "#075985";
-                const label = isSpare ? "SPARE ITEM" : "REGULAR ITEM";
+    const badgeBg = isSpare ? "#fef3c7" : "#e0f2fe";
+    const badgeColor = isSpare ? "#92400e" : "#075985";
+    const label = isSpare ? "SPARE" : "REGULAR";
 
-                return `
+    return `
 <tr style="border-bottom:1px solid #e5e7eb;">
-<td style="vertical-align:middle;">
-  <span style="font-weight:600;color:#111827;">
-    ${item.asset?.asset_name || "N/A"}
-  </span>
-  <span style="
-    display:inline-block;
-    margin-left:8px;
-    padding:3px 8px;
-    font-size:10px;
-    font-weight:600;
-    border-radius:50px;
-    background:${badgeBg};
-    color:${badgeColor};
-  ">
-    ${label}
-  </span>
+<td>
+<strong>${item.asset?.asset_name || "N/A"}</strong>
+<span style="
+margin-left:8px;
+padding:3px 8px;
+font-size:10px;
+font-weight:600;
+border-radius:50px;
+background:${badgeBg};
+color:${badgeColor};
+">
+${label}
+</span>
 </td>
-<td align="center" style="vertical-align:middle;">
-  ${item.requested_qty}
-</td>
+<td align="center">${item.requested_qty}</td>
 </tr>
 `;
-            }).join("")}
+}).join("")}
 
 </table>
 </td>
 </tr>
 
-<!-- Remarks -->
+<!-- REMARKS -->
 <tr>
-<td style="padding:20px 30px 0 30px;font-size:14px;color:#374151;">
+<td style="padding:20px 30px;font-size:14px;">
 <strong>Remarks:</strong><br/>
-${fullRequest.request_remarks || "No additional remarks provided."}
+<span style="color:#374151;">
+${fullRequest.request_remarks || "No remarks provided"}
+</span>
 </td>
 </tr>
 
@@ -639,6 +1114,7 @@ ${fullRequest.request_remarks || "No additional remarks provided."}
 <tr>
 <td align="center" style="padding:30px;">
 <a href="https://inventory.kdmengineers.com"
+
 style="
 display:inline-block;
 padding:14px 28px;
@@ -649,17 +1125,25 @@ border-radius:8px;
 font-weight:600;
 font-size:14px;
 box-shadow:0 6px 16px rgba(37,99,235,0.4);
-">
-Review & Approve Request
+"
+
+>
+Review Request →
 </a>
 </td>
 </tr>
 
-<!-- Footer -->
+<!-- FOOTER -->
 <tr>
-<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#6b7280;">
-This is an automated notification from KDM Engineers Inventory System.<br/>
-© ${new Date().getFullYear()} KDM Engineers Group. All rights reserved.
+<td style="
+background:#f9fafb;
+padding:20px;
+text-align:center;
+font-size:12px;
+color:#6b7280;
+">
+This is an automated notification from KDM Engineers.<br/>
+© ${new Date().getFullYear()} KDM Engineers Group
 </td>
 </tr>
 
@@ -671,93 +1155,57 @@ This is an automated notification from KDM Engineers Inventory System.<br/>
 </body>
 </html>
 `
-        });
+        }); 
 
-        // 3️⃣ Commit
+        }
+
+
+        /* ================= COMMIT ================= */
+
         await transaction.commit();
+
+        if (canAutoApprove) {
+
+    // mock req/res for internal call
+    const mockReq = {
+        params: { reqId: assetRequest.req_id },
+        body: {
+            decision: "APPROVED",
+            adminAdvice: "Auto-approved (sufficient inventory)",
+        },
+        user: {
+            id: admin_user_id,
+            company_id: companyId,
+        },
+    };
+
+    const mockRes = {
+        json: () => {},
+        status: () => ({ json: () => {} }),
+    };
+
+    await decideAssetRequest(mockReq, mockRes);
+}
 
         return res.status(201).json({
             message: "Asset request created successfully",
             data: fullRequest,
         });
+
     } catch (error) {
+
         await transaction.rollback();
+
         console.error(error);
+
         return res.status(500).json({
-            message: "Failed to create asset request",
+            message: error.message || "Failed to create asset request",
         });
     }
 };
 
-// export const createAssetRequest = async (req, res) => {
-//     const transaction = await sequelize.transaction();
-
-//     try {
-//         const {
-//             req_user_id,
-//             admin_user_id,
-//             site_id,
-//             priority_level,
-//             request_remarks,
-//             items,
-//         } = req.body;
-
-//         // 1️⃣ Check if AssetRequest already exists for this site
-//         let assetRequest = await AssetRequest.findOne({
-//             where: { site_id },
-//             transaction,
-//             lock: transaction.LOCK.UPDATE,
-//         });
-
-//         // 2️⃣ If not exists → create new AssetRequest
-//         if (!assetRequest) {
-//             assetRequest = await AssetRequest.create(
-//                 {
-//                     req_user_id,
-//                     admin_user_id,
-//                     site_id,
-//                     priority_level,
-//                     request_remarks,
-//                     allocated: 0,
-//                 },
-//                 { transaction }
-//             );
-//         }
-
-//         // 3️⃣ Prepare request items using resolved req_id
-//         const requestItems = items.map(item => ({
-//             req_id: assetRequest.req_id,
-//             asset_id: item.asset_id,
-//             requested_qty: item.requested_qty,
-//             spare_item: item.spare_item ?? false,
-//         }));
-
-//         // 4️⃣ Create request items
-//         await AssetRequestItem.bulkCreate(requestItems, {
-//             transaction,
-//         });
-
-//         // 5️⃣ Commit
-//         await transaction.commit();
-
-//         return res.status(201).json({
-//             message: "Asset request processed successfully",
-//             data: assetRequest,
-//         });
-//     } catch (error) {
-//         await transaction.rollback();
-//         console.error("createAssetRequest error:", error);
-
-//         return res.status(500).json({
-//             message: "Failed to create asset request",
-//         });
-//     }
-// };
-
 
 //GET ALL ASSET REQUESTS
-
-
 export const getRequestsForAdmin = async (req, res, next) => {
     try {
         const companyId = req.user.company_id;
@@ -1212,44 +1660,100 @@ export const decideAssetRequest = async (req, res) => {
 
                 for (const item of request.items) {
 
-                    const asset = await Asset.findOne({
-                        where: {
-                            asset_id: item.asset_id,
-                            company_id: companyId,
-                        },
-                        transaction: t,
-                        lock: t.LOCK.UPDATE,
-                    });
+    const asset = await Asset.findOne({
+        where: {
+            asset_id: item.asset_id,
+            company_id: companyId,
+        },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+    });
 
-                    if (!asset) {
-                        throw new Error(`Asset not found`);
-                    }
+    if (!asset) throw new Error(`Asset not found`);
 
-                    const available = asset.qty;
-                    const requested = item.requested_qty;
+    const available = asset.qty;
+    const requested = item.requested_qty;
 
-                    if (available >= requested) {
+    let toPurchase = 0;
 
-                        asset.qty -= requested;
+    if (available >= requested) {
+        asset.qty -= requested;
+        toPurchase = 0;
+    } else {
+        toPurchase = requested - available;
 
-                    } else {
+        purchaseRequirements.push({
+            asset_name: asset.asset_name,
+            units: asset.units,
+            available,
+            requested,
+            toPurchase,
+            origin: "OFFICE"
+        });
 
-                        const toPurchase = requested - available;
+        asset.qty = 0;
+    }
 
-                        purchaseRequirements.push({
-                            asset_name: asset.asset_name,
-                            units: asset.units,
-                            available,
-                            requested,
-                            toPurchase,
-                            origin: "OFFICE"
-                        });
+    /* ✅ UPDATE MAIN ITEM */
+    await item.update(
+        { to_purchase_qty: toPurchase },
+        { transaction: t }
+    );
 
-                        asset.qty = 0;
-                    }
+    /* ✅ SAVE HISTORY WITH UPDATED VALUE */
+    await AssetRequestItemHistory.create(
+        {
+            ...item.toJSON(),
+            original_item_id: item.id,
+            to_purchase_qty: toPurchase, // 🔥 IMPORTANT
+            action_type: "UPDATED",
+        },
+        { transaction: t }
+    );
 
-                    await asset.save({ transaction: t });
-                }
+    await asset.save({ transaction: t });
+}
+
+                // for (const item of request.items) {
+
+                //     const asset = await Asset.findOne({
+                //         where: {
+                //             asset_id: item.asset_id,
+                //             company_id: companyId,
+                //         },
+                //         transaction: t,
+                //         lock: t.LOCK.UPDATE,
+                //     });
+
+                //     if (!asset) {
+                //         throw new Error(`Asset not found`);
+                //     }
+
+                //     const available = asset.qty;
+                //     const requested = item.requested_qty;
+
+                //     if (available >= requested) {
+
+                //         asset.qty -= requested;
+
+                //     } else {
+
+                //         const toPurchase = requested - available;
+
+                //         purchaseRequirements.push({
+                //             asset_name: asset.asset_name,
+                //             units: asset.units,
+                //             available,
+                //             requested,
+                //             toPurchase,
+                //             origin: "OFFICE"
+                //         });
+
+                //         asset.qty = 0;
+                //     }
+
+                //     await asset.save({ transaction: t });
+                // }
             }
 
             /* ================= SITE INVENTORY ================= */
@@ -1283,39 +1787,92 @@ export const decideAssetRequest = async (req, res) => {
 
                 for (const item of request.items) {
 
-                    const originItem = originItems.find(
-                        (i) => i.asset_id === item.asset_id
-                    );
+    const originItem = originItems.find(
+        (i) => i.asset_id === item.asset_id
+    );
 
-                    if (!originItem) {
-                        throw new Error(`Origin site asset not found`);
-                    }
+    if (!originItem) {
+        throw new Error(`Origin site asset not found`);
+    }
 
-                    const available = originItem.requested_qty;
-                    const requested = item.requested_qty;
+    const available = originItem.requested_qty;
+    const requested = item.requested_qty;
 
-                    if (available >= requested) {
+    let toPurchase = 0;
 
-                        originItem.requested_qty -= requested;
+    if (available >= requested) {
+        originItem.requested_qty -= requested;
+        toPurchase = 0;
+    } else {
+        toPurchase = requested - available;
 
-                    } else {
+        purchaseRequirements.push({
+            asset_name: item.asset?.asset_name || "Asset",
+            units: item.asset?.units || "",
+            available,
+            requested,
+            toPurchase,
+            origin: "SITE"
+        });
 
-                        const toPurchase = requested - available;
+        originItem.requested_qty = 0;
+    }
 
-                        purchaseRequirements.push({
-                            asset_name: item.asset?.asset_name || "Asset",
-                            units: item.asset?.units || "",
-                            available,
-                            requested,
-                            toPurchase,
-                            origin: "SITE"
-                        });
+    /* ✅ UPDATE MAIN ITEM */
+    await item.update(
+        { to_purchase_qty: toPurchase },
+        { transaction: t }
+    );
 
-                        originItem.requested_qty = 0;
-                    }
+    /* ✅ SAVE HISTORY */
+    await AssetRequestItemHistory.create(
+        {
+            ...item.toJSON(),
+            original_item_id: item.id,
+            to_purchase_qty: toPurchase, // 🔥 IMPORTANT
+            action_type: "UPDATED",
+        },
+        { transaction: t }
+    );
 
-                    await originItem.save({ transaction: t });
-                }
+    await originItem.save({ transaction: t });
+}
+
+                // for (const item of request.items) {
+
+                //     const originItem = originItems.find(
+                //         (i) => i.asset_id === item.asset_id
+                //     );
+
+                //     if (!originItem) {
+                //         throw new Error(`Origin site asset not found`);
+                //     }
+
+                //     const available = originItem.requested_qty;
+                //     const requested = item.requested_qty;
+
+                //     if (available >= requested) {
+
+                //         originItem.requested_qty -= requested;
+
+                //     } else {
+
+                //         const toPurchase = requested - available;
+
+                //         purchaseRequirements.push({
+                //             asset_name: item.asset?.asset_name || "Asset",
+                //             units: item.asset?.units || "",
+                //             available,
+                //             requested,
+                //             toPurchase,
+                //             origin: "SITE"
+                //         });
+
+                //         originItem.requested_qty = 0;
+                //     }
+
+                //     await originItem.save({ transaction: t });
+                // }
             }
         }
 
@@ -1831,6 +2388,9 @@ export const getAssetRequestById = async (req, res) => {
         const companyId = req.user.company_id;
         const { reqId } = req.params;
 
+            const t = await sequelize.transaction();
+
+
         const request = await AssetRequest.findOne({
             where: {
                 req_id: reqId,
@@ -1885,7 +2445,115 @@ export const getAssetRequestById = async (req, res) => {
             return res.status(404).json({ message: "Request not found" });
         }
 
-        res.json(request);
+            let purchaseRequirements = [];
+
+         
+      if (request.asset_origin === "OFFICE") {
+
+        for (const item of request.items) {
+
+          const asset = item.asset;
+
+          const requested = item.requested_qty;
+
+          // ⚠️ simulate "before deduction"
+          const available = asset.qty ;
+        //   console
+
+          if (available < requested) {
+            purchaseRequirements.push({
+              asset_name: asset.asset_name,
+              units: asset.units,
+              available,
+              requested,
+              toPurchase: requested - available,
+              origin: "OFFICE",
+                 asset_id: asset.asset_id
+            });
+          }
+        }
+      }
+
+      /* ================= SITE CASE ================= */
+
+       if (request.asset_origin === "SITE") {
+
+  const originSiteId = request.origin_site_id;
+
+//   console.log("Origin Site:", originSiteId);
+
+  const originRequest = await AssetRequest.findOne({
+    where: {
+      site_id: originSiteId,
+      company_id: companyId,
+    //   asset_origin: "SITE",
+    //   admin_approval: "APPROVED",
+    },
+    order: [["requested_at", "DESC"]],
+  });
+
+  if (!originRequest) {
+    console.log("❌ No origin request found");
+  } else {
+
+    const originItems = await AssetRequestItem.findAll({
+      where: {
+        req_id: originRequest.req_id,
+        company_id: companyId,
+      },
+    });
+
+    // console.log("Origin Items:", originItems);
+
+    for (const item of request.items) {
+
+      const originItem = originItems.find(
+        (i) => i.asset_id === item.asset_id
+      );
+
+      // ✅ DO NOT THROW — just handle gracefully
+      if (!originItem) {
+        // console.log("⚠️ Asset not found in origin site:", item.asset_id);
+
+        purchaseRequirements.push({
+          asset_name: item.asset?.asset_name || "Asset",
+          asset_id:item.asset?.asset_id || '989',
+          units: item.asset?.units || "",
+          available: 0,
+          requested: item.requested_qty,
+          toPurchase: item.requested_qty,
+          origin: "SITE",
+                  asset_id: item.asset.asset_id
+
+        });
+
+        continue;
+      }
+
+      const available = originItem.requested_qty;
+      const requested = item.requested_qty;
+
+      // ✅ PURE CALCULATION (NO MUTATION)
+      if (available < requested) {
+        purchaseRequirements.push({
+          asset_name: item.asset?.asset_name || "Asset",
+          units: item.asset?.units || "",
+          available,
+          requested,
+          toPurchase: requested - available,
+          origin: "SITE",
+        });
+      }
+    }
+  }
+}
+
+          const response = {
+      ...request.toJSON(),
+      purchaseRequirements,
+    };
+
+        res.json(response);
     } catch (err) {
         res.status(500).json({ message: "Failed to fetch request" });
     }

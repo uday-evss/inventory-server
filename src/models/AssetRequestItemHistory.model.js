@@ -31,6 +31,12 @@ const AssetRequestItemHistory = sequelize.define(
       allowNull: false,
     },
 
+    to_purchase_qty: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+
     spare_item: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
