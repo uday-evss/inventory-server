@@ -26,6 +26,7 @@ import {
   completeServicing,
   deleteRequestItem,
   updateRequestItemQty,
+  addRequestItem,
 } from "../controllers/asset.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
@@ -81,6 +82,8 @@ router.get("/asset-requests/:adminId", authenticate, getRequestsForAdmin);
 router.post("/asset-requests/decision/:reqId", authenticate, decideAssetRequest);
 router.get("/asset-requests/request/:reqId", authenticate, getAssetRequestById);
 
+
+
 // DELETE ITEM
 router.delete(
   "/asset-requests/item/:itemId",
@@ -94,6 +97,15 @@ router.put(
   authenticate,
   updateRequestItemQty,
 );
+
+// ADD ITEM TO REQUEST
+router.post(
+  "/asset-requests/item",
+  authenticate,
+  addRequestItem
+);
+
+
 
 router.put(
     "/asset-requests/allocate/:reqId",

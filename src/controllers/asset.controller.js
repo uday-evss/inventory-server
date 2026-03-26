@@ -2591,6 +2591,54 @@ export const updateRequestItemQty = async (req, res) => {
   }
 };
 
+// ADD ITEM TO REQUEST
+export const addRequestItem = async (req, res) => {
+  try {
+    const {
+      req_id,
+      asset_id,
+      requested_qty,
+      company_id,
+    } = req.body;
+
+    if (!req_id || !asset_id || !requested_qty) {
+      return res.status(400).json({ message: "Missing fields" });
+    }
+
+    // ✅ STEP 1: CHECK IF ALREADY EXISTS
+    const existing = await AssetRequestItem.findOne({
+      where: { req_id, asset_id },
+    });
+
+    if (existing) {
+      // ✅ STEP 2: UPDATE EXISTING QTY
+      await existing.increment("requested_qty", {
+        by: requested_qty,
+      });
+
+      return res.json({
+        message: "Quantity updated",
+        item: existing,
+      });
+    }
+
+    // ✅ STEP 3: CREATE NEW ITEM (ONLY IF NOT EXISTS)
+    const newItem = await AssetRequestItem.create({
+      req_id,
+      asset_id,
+      requested_qty,
+      to_purchase_qty: 0,
+      spare_item: false,
+      company_id,
+    });
+
+    return res.json(newItem);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Create failed" });
+  }
+};
+
 //MARK ASSET REQUEST AS ALLOCATED
 // export const allocateAssetRequest = async (req, res) => {
 //     const { reqId } = req.params;
